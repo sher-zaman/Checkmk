@@ -10,7 +10,7 @@ This repository contains PowerShell scripts and Checkmk plugins for monitoring a
 - **Tests**: Test scripts for validation.
 - **Configs**: Configuration files and templates.
 
-## Usage
+## Components
 
 ### Plugins
 
