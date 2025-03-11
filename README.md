@@ -20,9 +20,6 @@ This repository contains PowerShell scripts and Checkmk plugins for monitoring a
 
 - **check_dns_status.ps1**: CheckMK Local Script - DNS Server Monitoring.
 
-## Contributing
-
-Please read CONTRIBUTING.md for details on our code of conduct, and the process for submitting pull requests.
 
 ## License
 
