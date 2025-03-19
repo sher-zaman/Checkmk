@@ -20,6 +20,7 @@ This repository contains PowerShell scripts and Checkmk plugins for advanced mon
 ### 🖥️ Scripts (`/local/`)
 - `check_dns_status.ps1`: Checkmk Local Script – DNS Server Monitoring
 - `check_veeam_license_instance.ps1`: Checkmk Local Script – Veeam License & Instance Usage Monitoring
+- `VEEAM_Tape_Job_Legacy.ps1`: Checkmk Local Script – Veeam Tape Job State & Last Run Time Monitoring For Legacy Servers.
 
 ## 📝 License
 This project is licensed under the MIT License. See the [LICENSE.md](LICENSE.md) file for more details.
