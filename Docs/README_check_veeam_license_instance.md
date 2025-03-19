@@ -1,59 +1,39 @@
-# ✅ Checkmk Veeam Local Check Plugin
+# check_veeam_license_instance.ps1
 
-A lightweight and efficient PowerShell script for **Checkmk (Raw/Enterprise)** that monitors **Veeam Backup & Replication license expiry** and **instance usage**, reporting OK/WARN/CRIT states based on customizable thresholds.
+### 📂 Location: `Scripts/`
+### 📎 Type: Checkmk Local Script
 
-## 🔍 Features
-- 🎯 Monitors **Veeam license expiry (days remaining)**
-- 📊 Tracks **Veeam instance usage (%)**
-- 🟢 Compatible with **Checkmk local check format**
-- ⚠️ Supports internal threshold logic (no need for WATO rules)
-- 🚨 Graceful error handling — returns `UNKNOWN` if Veeam module or query fails
+## 📝 Description
+This script is designed to be used with the Checkmk agent's `local` directory. It performs two monitoring checks related to Veeam Backup & Replication:
+- License expiry countdown
+- Instance usage percentage
 
-## 📂 File Structure
+## 📊 Thresholds
+1. **License Expiry:**
+   - OK: More than 30 days remaining
+   - WARN: Less than 30 days
+   - CRIT: Less than 5 days
 
+2. **Instance Usage:**
+   - OK: Up to 100%
+   - WARN: Above 105%
+   - CRIT: Above 110%
+
+## 🔢 Output Format (Checkmk Compatible)
+The script outputs:
 ```
-checkmk-veeam-local-checks/
-├── check_veeam_license_instance.ps1
-└── README.md
-```
-
-## ⚙️ Threshold Configuration
-
-| Metric              | OK                    | Warning            | Critical            |
-|---------------------|------------------------|---------------------|----------------------|
-| License Expiry Days | > 30 days              | < 30 days           | < 5 days             |
-| Instance Usage (%)  | ≤ 100% of licensed     | ≥ 105%              | ≥ 110%               |
-
-## 🛠 Installation
-
-1. Copy `check_veeam_license_instance.ps1` to your Checkmk agent’s local script directory:
-   `C:\ProgramData\checkmk\agent\local\`
-
-2. Ensure PowerShell execution is permitted:
-   `Set-ExecutionPolicy RemoteSigned -Scope LocalMachine`
-
-3. Unblock the script if needed via File Properties.
-
-## 📈 Sample Output
-
-```
-OK - Veeam_License_Expiry license_expiry_days=45 License expires in 45 days
-WARN - Veeam_License_Expiry license_expiry_days=12 License expires in 12 days (Thresholds: WARN < 30, CRIT < 5)
-CRIT - Veeam_License_Expiry license_expiry_days=3 License expires in 3 days
-
-OK - Veeam_Instance_Usage instance_usage_percent=97 Used 97 of 100 instances (97%)
-WARN - Veeam_Instance_Usage instance_usage_percent=106.3 Used 106 of 100 instances (106.3%)
-CRIT - Veeam_Instance_Usage instance_usage_percent=112.5 Used 113 of 100 instances (112.5%)
+0 Veeam_License_Expiry license_expiry_days=X
+0 Veeam_Instance_Usage instance_usage_percent=Y
 ```
 
-## 🚨 Error Handling
+## 📁 Placement
+Place this script in:
 ```
-UNKNOWN - Error retrieving license information: <error>
-UNKNOWN - Error retrieving instance usage information: <error>
+C:\ProgramData\checkmk\agent\local\
 ```
 
-## 📜 License
-MIT License
+## ⚙️ Requirements
+- Veeam PowerShell Module (`Veeam.Backup.PowerShell`)
 
-## 🙌 Contributions
-Pull requests and feedback are welcome.
+## 📎 Notes
+- This script assumes PowerShell execution policy allows running unsigned scripts.

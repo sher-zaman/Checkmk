@@ -1,26 +1,25 @@
-# Checkmk Repository
+# 📊 Checkmk Monitoring Scripts & Plugins
 
-This repository contains PowerShell scripts and Checkmk plugins for monitoring and automation tasks.
+This repository contains PowerShell scripts and Checkmk plugins for advanced monitoring and automation tasks.
 
-## Folder Structure
+## 📁 Folder Structure
 
-- **Plugins**: Contains all Checkmk plugins.
-- **Scripts**: Contains all PowerShell scripts.
-- **Docs**: Documentation for scripts and plugins.
-- **Tests**: Test scripts for validation.
-- **Configs**: Configuration files and templates.
+| Folder    | Description                                      |
+|-----------|--------------------------------------------------|
+| `Plugins/` | Contains all Checkmk agent plugins (go in `/plugins/`) |
+| `Scripts/` | Contains all Checkmk local scripts (go in `/local/`)   |
+| `Docs/`    | Documentation files for scripts and plugins      |
+| `Tests/`   | Test scripts and helper tools for local testing  |
+| `Configs/` | Configuration files and templates                |
 
-## Components
+## ⚙️ Components
 
-### Plugins
+### 🔌 Plugins (`/plugins/`)
+- `check_dhcp_failover.ps1`: Checkmk Agent Plugin – DHCP Failover Monitoring
 
-- **check_dhcp_failover.ps1**: CheckMK Plugin Script - DHCP Failover Monitoring.
+### 🖥️ Scripts (`/local/`)
+- `check_dns_status.ps1`: Checkmk Local Script – DNS Server Monitoring
+- `check_veeam_license_instance.ps1`: Checkmk Local Script – Veeam License & Instance Usage Monitoring
 
-### Scripts
-
-- **check_dns_status.ps1**: CheckMK Local Script - DNS Server Monitoring.
-
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE.md file for details.
+## 📝 License
+This project is licensed under the MIT License. See the [LICENSE.md](LICENSE.md) file for more details.

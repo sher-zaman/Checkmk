@@ -1,41 +1,35 @@
-# ✅ Checkmk Local Script - DNS Server Status
+# check_dns_status.ps1
 
-A simple yet effective Checkmk local script that monitors the **status of the DNS Server service** on a Windows host.
+### 📂 Location: `Scripts/`
+### 📎 Type: Checkmk Local Script
 
-## 🔍 Features
-- 🔎 Checks the current status of the `DNS` Windows service.
-- 🔔 Reports OK or CRITICAL based on service state.
-- 🟢 Compatible with Checkmk local check output format.
-- 🛡 Very lightweight with almost no performance overhead.
+## 📝 Description
+This script checks the status of the DNS Server service on a Windows host and outputs a result in Checkmk local check format.
 
-## 📂 Script Location
+## 📊 Thresholds
+- **OK:** DNS Server service is running
+- **CRITICAL:** DNS Server service is NOT running
 
-Place the script here:
+## 🔢 Output Format (Checkmk Compatible)
+The script outputs:
 ```
-C:\ProgramData\checkmk\agent\local\check_dns_status.ps1
-```
-
-## 📈 Output Format
-
-The script returns a standard local check output:
-```
+<<<local>>>
 0 DNS_SERVER - OK - DNS Server is running
+```
+or
+```
+<<<local>>>
 2 DNS_SERVER - CRITICAL - DNS Server is NOT running!
 ```
 
-## ⚙️ Service States
+## 📁 Placement
+Place this script in:
+```
+C:\ProgramData\checkmk\agent\local\
+```
 
-| Status     | Exit Code | Description                     |
-|------------|-----------|----------------------------------|
-| OK         | 0         | DNS service is running          |
-| CRITICAL   | 2         | DNS service is not running      |
+## ⚙️ Requirements
+- PowerShell execution environment on the target host
 
-## 💡 Notes
-- Ensure the script is executable (`Unblock-File` or adjust execution policy if needed).
-- The script uses `Get-Service -Name "DNS"` — ensure the service is named `"DNS"` on your system.
-
-## 📜 License
-MIT License
-
-## 🙌 Contributions
-Pull requests are welcome. Suggestions and improvements encouraged.
+## 📎 Notes
+- The script uses `Get-Service` with error handling in case the service is not found.

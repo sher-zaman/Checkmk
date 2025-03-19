@@ -1,44 +1,38 @@
-# ✅ Checkmk Plugin - DHCP Failover Monitoring
+# check_dhcp_failover.ps1
 
-This Checkmk plugin monitors **DHCP Failover status** on a Windows server and reports critical or warning conditions for each failover scope.
+### 📂 Location: `Plugins/`
+### 📎 Type: Checkmk Agent Plugin
 
-## 🔍 Features
-- Checks all failover scopes on DHCP Server.
-- Detects `CommunicationInterrupted` and other abnormal states.
-- Reports using standard Checkmk local check format.
+## 📝 Description
+This plugin script monitors the failover status of DHCP scopes on a Windows DHCP Server. It identifies normal, warning, and critical states for each scope.
 
-## 📂 Plugin Location
+## 📊 Thresholds
+- **OK:** All scopes are in "Normal" state
+- **WARNING:** Any scope is in "CommunicationInterrupted" state
+- **CRITICAL:** Any scope is in other abnormal states (e.g., "PartnerDown")
 
-Place the plugin in:
-```
-C:\ProgramData\checkmk\agent\plugins\check_dhcp_failover.ps1
-```
-
-## 📈 Output Format
+## 🔢 Output Format (Checkmk Compatible)
+The script outputs:
 ```
 <<<local>>>
 0 DHCP_FAILOVER - OK - All DHCP failover scopes are normal
-1 DHCP_FAILOVER - WARNING - Failover Issues: ScopeID: CommunicationInterrupted
-2 DHCP_FAILOVER - CRITICAL - Failover Issues: ScopeID: PartnerDown
-3 DHCP_FAILOVER - UNKNOWN - No failover configuration found
+```
+or for issues:
+```
+<<<local>>>
+1 DHCP_FAILOVER - WARNING - Failover Issues: <ScopeId>: CommunicationInterrupted
+2 DHCP_FAILOVER - CRITICAL - Failover Issues: <ScopeId>: PartnerDown
 ```
 
-## ⚙️ Service States
+## 📁 Placement
+Place this script in:
+```
+C:\ProgramData\checkmk\agent\plugins\
+```
 
-| Status     | Exit Code | Description                            |
-|------------|-----------|----------------------------------------|
-| OK         | 0         | All failover scopes are healthy        |
-| WARNING    | 1         | At least one scope in warning state    |
-| CRITICAL   | 2         | At least one scope in critical state   |
-| UNKNOWN    | 3         | No failover data found or not configured |
+## ⚙️ Requirements
+- PowerShell environment on the target host
+- DHCP PowerShell module available
 
-## 💡 Notes
-- Requires **DHCP Server PowerShell module**.
-- Tested on Windows Server with failover configuration.
-- Ensure script execution policy allows the script to run.
-
-## 📜 License
-MIT License
-
-## 🙌 Contributions
-Pull requests and improvements welcome.
+## 📎 Notes
+- The script is structured to exit with appropriate codes and provide detailed scope status in output.
