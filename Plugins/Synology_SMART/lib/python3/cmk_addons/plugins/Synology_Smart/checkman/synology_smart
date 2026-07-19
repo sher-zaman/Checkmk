@@ -1,0 +1,38 @@
+title: Synology NAS: SMART Attributes per Disk
+agents: snmp
+catalog: hw/storagehw/synology
+license: GPLv2
+distribution: Sher Zaman (FirmaTrust)
+description:
+ This check monitors the SMART attributes of every physical disk in a
+ Synology NAS via SNMP (SYNOLOGY-SMART-MIB, .1.3.6.1.4.1.6574.5). It works
+ on DSM 6.2 and later and requires no configuration.
+
+ The service goes {CRIT} if DSM reports any SMART attribute with a status
+ other than OK.
+
+ In addition, the raw values of the pre-failure counters
+ Reallocated_Sector_Ct, Current_Pending_Sector, Offline_Uncorrectable,
+ Reported_Uncorrect and UDMA_CRC_Error_Count are checked against
+ thresholds (default: {WARN} at 1 or more, {CRIT} at 10 or more). Each
+ counter is only evaluated on drives that actually report it; a missing
+ attribute is never flagged. The thresholds can be adjusted per service
+ with the rule set "Synology SMART attributes".
+
+ A rising Reallocated_Sector_Ct, Current_Pending_Sector or
+ Offline_Uncorrectable indicates a failing disk. UDMA_CRC_Error_Count
+ usually points to a cabling or backplane problem rather than the disk
+ itself.
+
+ Power_On_Hours is reported informationally and recorded as a metric.
+ Disk temperature is intentionally not covered as it is already handled
+ by the built-in Synology disk check.
+
+item:
+ The drive bay as reported by DSM, e.g. {Drive 1} or {Drive 2 (DX517-1)}
+ for disks in expansion units. If the SMART table and the disk table
+ disagree on the number of disks, the device path (e.g. {/dev/sda}) is
+ used instead.
+
+discovery:
+ One service is created for every disk found in the SMART table.
