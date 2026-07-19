@@ -1,0 +1,31 @@
+title: Windows DHCP Server: Failover Relationships
+agents: windows
+catalog: os/windows
+license: GPLv2
+distribution: check_mk
+description:
+ This check monitors the state of DHCPv4 failover relationships on
+ Windows DHCP servers. It requires the agent plugin {dhcp_failover.ps1}
+ to be installed on the monitored host, either manually or via the
+ Agent Bakery rule "DHCP failover monitoring (Windows)".
+
+ The check reports the relationship state (for example {Normal},
+ {CommunicationInterrupted} or {PartnerDown}) together with the failover
+ mode, the partner server, the server role (for hot standby mode) and
+ the number of scopes covered by the relationship.
+
+ By default the check is OK for {Normal}, WARN for
+ {CommunicationInterrupted} and transitional states such as {Startup}
+ or {RecoverWait}, and CRIT for {PartnerDown} and all conflict states.
+ The mapping of each relationship state to a monitoring state can be
+ configured via the rule "Windows DHCP failover relationships".
+
+ If the DHCP Server role is not installed on a host, the agent plugin
+ produces no output and no services are discovered.
+
+item:
+ The name of the failover relationship as configured on the DHCP server.
+
+discovery:
+ One service is created for each failover relationship found on the
+ DHCP server.
