@@ -1,0 +1,20 @@
+title: FortiSwitch: Chassis Temperature
+agents: snmp
+catalog: hw/network/fortinet
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors chassis temperature sensors of Fortinet FortiSwitch devices
+ via the ENTITY-SENSOR-MIB. Sensors are discovered dynamically and named
+ from the ENTITY-MIB physical name (e.g. Sensor1, Board Temp (1)).
+ SFP/DOM optical temperature sensors are excluded.
+
+ The check uses Checkmk's standard temperature framework, so levels,
+ trend computation and unit display are configured via the built-in
+ "Temperature" ruleset (default 60/70 degrees C).
+
+item:
+ The sensor name from the ENTITY-MIB.
+
+discovery:
+ One service is created per chassis temperature sensor with a value.

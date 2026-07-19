@@ -1,0 +1,27 @@
+title: FortiSwitch: Fan
+agents: snmp
+catalog: hw/network/fortinet
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors fans of Fortinet FortiSwitch devices via the ENTITY-SENSOR-MIB.
+ Fan speed is reported as percent of maximum and always graphed.
+
+ State mapping: sensor status "ok" is OK; "nonoperational" is CRIT;
+ "unavailable" with a live speed value is OK (observed as normal
+ behaviour on FS-1024D), while "unavailable" without a speed value is
+ CRIT. Lower speed levels are active by default (WARN 5%, CRIT 2%), so
+ a stopped fan reading 0% goes CRIT. All mappings and speed levels are
+ configurable via the "FortiSwitch fan" ruleset.
+
+item:
+ The fan name from the ENTITY-MIB, or "Fan <index>" if the device does
+ not label the sensor (e.g. FS-148F).
+
+discovery:
+ One service is created per fan sensor that reports a live (nonzero)
+ speed at discovery time, so every discovered fan is a known-good
+ baseline and the failure defaults cannot false-alarm on models whose
+ fan sensors report no speed. Fanless models discover no fan services.
+ A fan idle at exactly 0% during discovery is picked up by a later
+ re-discovery once it reports speed.

@@ -1,0 +1,27 @@
+title: FortiSwitch: SFP Optical Diagnostics
+agents: snmp
+catalog: hw/network/fortinet
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors SFP/DOM optical transceiver diagnostics on Fortinet FortiSwitch
+ devices via the ENTITY-SENSOR-MIB: RX power, TX power, transceiver
+ temperature, supply voltage and laser bias current, all on one service
+ per optic. RX power is the primary degradation signal for fiber uplinks.
+
+ Optics carry no entity names on most models and the FortiSwitch MIB
+ provides no switchport mapping, so optics are grouped by their
+ characteristic five-sensor pattern and named positionally per unit.
+
+ All levels are active by default with lenient values suitable for
+ common 1G/10G optics and are configurable via the "FortiSwitch SFP
+ optical diagnostics" ruleset. An optic that stops reporting DOM values
+ (removed or failed) goes CRIT by default, configurable in the same
+ ruleset.
+
+item:
+ Positional optic name, e.g. "SFP 1".
+
+discovery:
+ One service is created per optic reporting live (nonzero) DOM values.
+ Empty cages and copper or non-DOM modules are not discovered.

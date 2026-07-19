@@ -1,0 +1,15 @@
+title: FortiSwitch: CPU Utilization
+agents: snmp
+catalog: hw/network/fortinet
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the CPU utilization of Fortinet FortiSwitch devices via the
+ FORTINET-FORTISWITCH-MIB (.1.3.6.1.4.1.12356.106.4.1.2.0).
+
+ The value is an instantaneous sample. Upper WARN/CRIT levels are
+ configurable via the "FortiSwitch CPU utilization" ruleset
+ (default 80%/90%).
+
+discovery:
+ One service is created if the device reports a CPU utilization value.

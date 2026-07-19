@@ -1,0 +1,21 @@
+title: FortiSwitch: Power Supply State
+agents: snmp
+catalog: hw/network/fortinet
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors power supply state of Fortinet FortiSwitch devices via the
+ ENTITY-SENSOR-MIB truthvalue sensors (OK / Not OK). PSUs are discovered
+ dynamically from the live sensor table; presence varies by chassis
+ class and firmware, so units without PSU sensors simply discover no
+ PSU services.
+
+ A PSU reporting "not OK" maps to CRIT by default. The state is
+ configurable via the "FortiSwitch PSU state" ruleset, e.g. to
+ downgrade a known-unplugged second PSU to WARN.
+
+item:
+ The PSU name from the ENTITY-MIB (e.g. PSU1, PSU2).
+
+discovery:
+ One service is created per discovered power supply sensor.
