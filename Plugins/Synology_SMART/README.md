@@ -40,7 +40,7 @@ An optional ruleset is available for per-service threshold adjustment on the pre
 
 ## Author
 
-Sher Zaman (FirmaTrust)
+Sher Zaman
 
 ## License
 

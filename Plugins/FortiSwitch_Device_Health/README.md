@@ -49,7 +49,7 @@ FortiSwitch 108F, 124E, 124G, 148F, 224E, 248E, 424E, M426E, 448E, 524D, 548D, a
 
 ## Author
 
-Sher Zaman (FirmaTrust)
+Sher Zaman
 
 ## License
 
