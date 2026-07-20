@@ -4,7 +4,7 @@ Checkmk agent-based extension that detects whether a Linux host has a pending re
 
 ## Attribution
 
-Based on the `system_reboot_required` extension by **Owner: [lhausdoerfer](https://exchange.checkmk.com/u/lhausdoerfer)** (Luca-Leon Hausdoerfer).
+Fork of the `system_reboot_required` extension by Luca-Leon Hausdoerfer ([lhausdoerfer on Checkmk Exchange](https://exchange.checkmk.com/u/lhausdoerfer), [blaugrau90 on GitHub](https://github.com/blaugrau90/cmk-linux-server-reboot)).
 
 This is a maintenance fork. The original author's copyright is preserved on all derived files, and new files added in this fork carry their own copyright. Licensed under GPLv3.
 
@@ -66,4 +66,6 @@ Where the detection method provides no native timestamp, the modification time o
 
 ## License
 
-GPLv3, preserving the original author's copyright. See repository [LICENSE.md](../../LICENSE.md).
+GPLv3, preserving the original author's copyright. See [LICENSE](LICENSE) in this folder.
+
+The repository-level [LICENSE.md](../../LICENSE.md) (GPLv2) applies to original FirmaTrust extensions only, not to this fork.
