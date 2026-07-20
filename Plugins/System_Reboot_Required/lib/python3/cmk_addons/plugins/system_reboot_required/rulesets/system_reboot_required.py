@@ -1,7 +1,7 @@
 # system_reboot_required - CheckMK WATO ruleset
 #
 # Copyright (C) 2026  Luca-Leon Hausdoerfer - (cmk@hausdoerfer.dev)
-# Copyright (C) 2026  Sher Zaman - FirmaTrust (szaman@iceconsulting.com)
+# Copyright (C) 2026  Sher Zaman - FirmaTrust (sher_zaman[at]outlook[dot]com)
 #
 # Modified 2026-07-18 by Sher Zaman (FirmaTrust):
 #   - Added configurable service state for pending reboots whose age

@@ -1,6 +1,6 @@
 # system_reboot_required - CheckMK Agent Bakery ruleset
 #
-# Copyright (C) 2026  Sher Zaman - FirmaTrust (szaman@iceconsulting.com)
+# Copyright (C) 2026  Sher Zaman - FirmaTrust (sher_zaman[at]outlook[dot]com)
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

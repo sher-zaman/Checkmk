@@ -1,7 +1,7 @@
 # system_reboot_required - CheckMK agent-based check plugin
 #
 # Copyright (C) 2026  Luca-Leon Hausdoerfer - (cmk@hausdoerfer.dev)
-# Copyright (C) 2026  Sher Zaman - FirmaTrust (szaman@iceconsulting.com)
+# Copyright (C) 2026  Sher Zaman - FirmaTrust (sher_zaman[at]outlook[dot]com)
 #
 # Modified 2026-07-18 by Sher Zaman (FirmaTrust):
 #   - Made the service state for pending reboots with unknown age
