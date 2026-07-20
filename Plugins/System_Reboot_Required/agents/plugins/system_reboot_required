@@ -1,0 +1,171 @@
+#!/bin/sh
+# system_reboot_required - CheckMK agent plugin to detect pending system reboots
+#
+# Copyright (C) 2026  Luca-Leon Hausdoerfer - (cmk@hausdoerfer.dev)
+# Copyright (C) 2026  Sher Zaman - FirmaTrust (szaman@iceconsulting.com)
+#
+# Modified 2026-07-18 by Sher Zaman (FirmaTrust):
+#   - Added needrestart batch-mode detection (Debian/Ubuntu/Kali),
+#     fixes upstream issue #2 (kernel updates missed when the
+#     /var/run/reboot-required sentinel file is never created)
+#   - Added zypper needs-rebooting detection (SUSE/openSUSE)
+#   - Fixed RPM kernel comparison to handle kernel-core (RHEL 9+/Fedora)
+#     and kernel-default (SUSE) package naming
+#   - Derive pending-since timestamp from newest installed kernel image
+#     for detection methods without a native timestamp, so configured
+#     age thresholds apply instead of an unconditional state
+#
+# Modified 2026-07-19 by Sher Zaman (FirmaTrust):
+#   - RPM fallback: only accept "rpm -q <pkg> --last" output matching
+#     "<pkg>-<digit>", since rpm prints "package X is not installed"
+#     on stdout (fixes false positive and bogus package name)
+#   - RPM fallback: strip arch suffix and rebuild counter from the
+#     package NVRA when comparing against flavor-suffixed uname -r
+#     (fixes false positive on fully patched SUSE hosts)
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+echo '<<<system_reboot_required>>>'
+
+reboot_required=0
+detection_method="none"
+since_timestamp="unknown"
+packages="unknown"
+
+# Helper: get file mtime as unix timestamp
+get_mtime() {
+    _file="$1"
+    if stat -c %Y "$_file" 2>/dev/null; then
+        return
+    fi
+    # BSD stat fallback (macOS)
+    if stat -f %m "$_file" 2>/dev/null; then
+        return
+    fi
+    echo "unknown"
+}
+
+# Helper: mtime of the newest installed kernel image in /boot.
+# Used as a best-effort pending-since timestamp for detection methods
+# that do not provide one natively. Prints "unknown" if undeterminable.
+newest_kernel_mtime() {
+    _newest=$(find /boot -maxdepth 1 -name 'vmlinuz-*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    if [ -n "$_newest" ]; then
+        get_mtime "$_newest"
+    else
+        echo "unknown"
+    fi
+}
+
+# Method 1: Debian/Ubuntu /var/run/reboot-required
+if [ -f /var/run/reboot-required ]; then
+    reboot_required=1
+    detection_method="reboot-required-file"
+    since_timestamp=$(get_mtime /var/run/reboot-required)
+    if [ -f /var/run/reboot-required.pkgs ]; then
+        packages=$(tr '\n' ',' < /var/run/reboot-required.pkgs | sed 's/,$//')
+    fi
+fi
+
+# Method 2: /run/reboot-required (some distros use /run instead of /var/run)
+if [ "$reboot_required" = "0" ] && [ -f /run/reboot-required ]; then
+    reboot_required=1
+    detection_method="run-reboot-required-file"
+    since_timestamp=$(get_mtime /run/reboot-required)
+    if [ -f /run/reboot-required.pkgs ]; then
+        packages=$(tr '\n' ',' < /run/reboot-required.pkgs | sed 's/,$//')
+    fi
+fi
+
+# Method 3: needrestart batch mode (Debian/Ubuntu/Kali; default on Ubuntu 22.04+)
+# Detects pending kernel upgrades even when the reboot-required sentinel file
+# was never created (e.g. minimal images without update-notifier-common,
+# Ubuntu Pro/ESM kernels). Kernel-only batch mode (-b -k) is fast and never
+# restarts anything.
+# NEEDRESTART-KSTA: 0=unknown, 1=current, 2=ABI-compatible upgrade pending,
+# 3=version upgrade pending. 2 and 3 both indicate a newer installed kernel.
+if [ "$reboot_required" = "0" ] && command -v needrestart >/dev/null 2>&1; then
+    nr_out=$(needrestart -b -k 2>/dev/null)
+    nr_ksta=$(echo "$nr_out" | awk -F': ' '/^NEEDRESTART-KSTA:/ {print $2; exit}')
+    case "$nr_ksta" in
+        2|3)
+            reboot_required=1
+            detection_method="needrestart"
+            since_timestamp=$(newest_kernel_mtime)
+            nr_kexp=$(echo "$nr_out" | awk -F': ' '/^NEEDRESTART-KEXP:/ {print $2; exit}')
+            if [ -n "$nr_kexp" ]; then
+                packages="kernel-${nr_kexp}"
+            fi
+            ;;
+    esac
+fi
+
+# Method 4: needs-restarting (RHEL/CentOS/Rocky/AlmaLinux/Fedora with dnf-utils)
+if [ "$reboot_required" = "0" ] && command -v needs-restarting >/dev/null 2>&1; then
+    if ! needs-restarting -r >/dev/null 2>&1; then
+        reboot_required=1
+        detection_method="needs-restarting"
+        since_timestamp=$(newest_kernel_mtime)
+        packages="unknown"
+    fi
+fi
+
+# Method 5: zypper needs-rebooting (SUSE/openSUSE)
+# Exit code 102 means a reboot is required, 0 means it is not.
+if [ "$reboot_required" = "0" ] && command -v zypper >/dev/null 2>&1; then
+    zypper needs-rebooting >/dev/null 2>&1
+    if [ "$?" = "102" ]; then
+        reboot_required=1
+        detection_method="zypper-needs-rebooting"
+        since_timestamp=$(newest_kernel_mtime)
+        packages="unknown"
+    fi
+fi
+
+# Method 6: RPM kernel comparison (RPM-based distros without the tools above)
+# Skip on Debian/Ubuntu systems where rpm may be installed but is not the
+# primary package manager. Handles kernel (RHEL<=8/CentOS), kernel-core
+# (RHEL 9+/Fedora) and kernel-default (SUSE) package naming.
+if [ "$reboot_required" = "0" ] && command -v rpm >/dev/null 2>&1 && ! command -v dpkg >/dev/null 2>&1 && command -v uname >/dev/null 2>&1; then
+    running_kernel=$(uname -r)
+    latest_installed=""
+    for _pkg in kernel kernel-core kernel-default; do
+        # rpm prints "package X is not installed" on STDOUT; only accept
+        # output that actually starts with "<pkg>-<digit>".
+        _cand=$(rpm -q "$_pkg" --last 2>/dev/null | head -1 | awk '{print $1}')
+        case "$_cand" in
+            "${_pkg}"-[0-9]*)
+                latest_installed=${_cand#"${_pkg}"-}
+                break
+                ;;
+        esac
+    done
+    # SUSE: uname -r carries a flavor suffix (e.g. -default) that the
+    # package NVRA does not, while the NVRA carries an arch suffix and a
+    # rebuild counter (e.g. .1.x86_64) that uname does not; strip both
+    # sides before comparing.
+    running_cmp=$(echo "$running_kernel" | sed 's/-default$//; s/-preempt$//; s/-rt$//; s/-64kb$//; s/-azure$//')
+    latest_cmp=$(echo "$latest_installed" | sed 's/\.\(x86_64\|aarch64\|i[3-6]86\|s390x\|ppc64le\|armv7hl\|riscv64\|noarch\)$//; s/\.[0-9]\{1,\}$//')
+    if [ -n "$latest_installed" ] && [ "$running_kernel" != "$latest_installed" ] && [ "$running_cmp" != "$latest_installed" ] && [ "$running_cmp" != "$latest_cmp" ]; then
+        reboot_required=1
+        detection_method="rpm-kernel-mismatch"
+        since_timestamp=$(newest_kernel_mtime)
+        packages="kernel-${latest_installed}"
+    fi
+fi
+
+echo "reboot_required: ${reboot_required}"
+echo "detection_method: ${detection_method}"
+echo "since_timestamp: ${since_timestamp}"
+echo "packages: ${packages}"

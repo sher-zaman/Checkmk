@@ -1,0 +1,38 @@
+title: System Reboot Required: Pending Reboot Detection on Linux
+agents: linux
+catalog: os/misc
+license: GPLv3
+distribution: Sher Zaman - FirmaTrust (fork of the package by Luca-Leon Hausdoerfer)
+description:
+ This check reports whether a Linux host requires a reboot, typically
+ after a kernel or core library update. It requires the
+ system_reboot_required agent plugin, which can be deployed manually
+ or via the Agent Bakery rule "System Reboot Required (Linux)".
+
+ The agent plugin tries the following detection methods in order and
+ stops at the first positive result: the /var/run/reboot-required and
+ /run/reboot-required sentinel files (Debian, Ubuntu, Kali), needrestart
+ in kernel-only batch mode (Debian, Ubuntu, Kali), needs-restarting from
+ dnf-utils (RHEL, CentOS, Rocky Linux, AlmaLinux, Fedora), zypper
+ needs-rebooting (SUSE, openSUSE), and finally a comparison of the
+ running kernel against the newest installed kernel RPM (kernel,
+ kernel-core or kernel-default package naming).
+
+ The service is OK when no reboot is pending. When a reboot is pending,
+ the state depends on how long it has been pending: OK below the WARN
+ threshold, WARN between the thresholds, CRIT at or above the CRIT
+ threshold (defaults 12 and 24 hours, configurable). If the
+ pending-since time cannot be determined, a configurable state is used
+ instead (default WARN). Where the detection method provides no native
+ timestamp, the modification time of the newest kernel image in /boot
+ is used as a best-effort pending-since time.
+
+ When the age is known, the check yields a perfdata metric for the
+ pending reboot age.
+
+ This package supersedes system_reboot_required version 1.0.1 by
+ Luca-Leon Hausdoerfer. The original package must be disabled or
+ removed before installing this one, as both use the same file paths.
+
+discovery:
+ One service is created per host if the agent section is present.
