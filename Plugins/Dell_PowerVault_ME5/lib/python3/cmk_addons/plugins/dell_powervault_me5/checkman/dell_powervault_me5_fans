@@ -1,0 +1,18 @@
+title: Dell PowerVault ME5: Fans
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the cooling fans of a Dell PowerVault ME5 enclosure, including health,
+ status and speed. Fan speed is recorded as a metric; optional upper and lower
+ levels on speed are available and off by default.
+
+ State is taken from the fan health value reported by the array. Conditions are
+ configurable via the "Dell PowerVault ME5 fan" ruleset.
+
+item:
+ The fan durable id (for example {"fan_0.0"}).
+
+discovery:
+ One service is created per fan that reports a speed.

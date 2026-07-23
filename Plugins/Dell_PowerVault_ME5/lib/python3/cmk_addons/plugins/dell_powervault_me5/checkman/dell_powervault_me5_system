@@ -1,0 +1,17 @@
+title: Dell PowerVault ME5: System Health
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Reports the overall health of a Dell PowerVault ME5 storage system together
+ with management-controller redundancy: the redundancy status, the operational
+ status of each controller and the status of the partner management controller.
+
+ State is taken from the system health value reported by the array. The mapping
+ of the degraded, fault, unknown, not-redundant, controller-down and partner
+ management controller conditions is configurable via the "Dell PowerVault ME5
+ system health" ruleset.
+
+discovery:
+ One service is created per array.

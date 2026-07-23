@@ -1,0 +1,22 @@
+title: Dell PowerVault ME5: Volumes
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the base volumes of a Dell PowerVault ME5 system: volume health,
+ whether the current owning controller matches the preferred owner, and the
+ allocated size. Optional upper levels on the thin-provisioned fill ratio are
+ available and off by default.
+
+ Snapshots are volumes on the ME5 but are not shown here; they are covered by
+ the "Dell PowerVault ME5: Snapshots" check.
+
+ State is taken from the volume health value reported by the array. Conditions
+ are configurable via the "Dell PowerVault ME5 volume" ruleset.
+
+item:
+ The volume name.
+
+discovery:
+ One service is created per base volume.

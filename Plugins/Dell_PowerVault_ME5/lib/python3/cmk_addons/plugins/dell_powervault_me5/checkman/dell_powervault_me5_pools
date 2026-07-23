@@ -1,0 +1,19 @@
+title: Dell PowerVault ME5: Pools
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the capacity of each Dell PowerVault ME5 virtual pool. The pool is
+ presented like a filesystem, so the standard Checkmk "Filesystem (used space
+ and growth)" ruleset applies, including used-space levels, the magic factor
+ and trend computation (default 80%/90%).
+
+ Over-commit and pool health are shown as informational text; over-commit is
+ expected on thin-provisioned pools.
+
+item:
+ The pool name (for example {"A"}).
+
+discovery:
+ One service is created per pool.

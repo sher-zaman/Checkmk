@@ -1,0 +1,19 @@
+title: Dell PowerVault ME5: Controller Health
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors each storage controller of a Dell PowerVault ME5 system: health,
+ operational status, fail-over state, cache write policy and redundancy. The
+ model, cache size and port/disk counts are shown for reference.
+
+ State is taken from the controller health value reported by the array. The
+ mapping of each condition is configurable via the "Dell PowerVault ME5
+ controller health" ruleset.
+
+item:
+ The controller id (for example {"A"} or {"B"}).
+
+discovery:
+ One service is created per controller.

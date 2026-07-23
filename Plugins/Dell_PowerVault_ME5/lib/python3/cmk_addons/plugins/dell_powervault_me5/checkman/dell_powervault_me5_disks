@@ -1,0 +1,19 @@
+title: Dell PowerVault ME5: Disks
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the physical disks of a Dell PowerVault ME5 system: disk health,
+ error and drive-down conditions and SMART status. Temperature, remaining SSD
+ life and power-on hours are reported where the disk provides them, with
+ optional lower levels on remaining SSD life (off by default).
+
+ State is taken from the disk health value reported by the array. Conditions
+ are configurable via the "Dell PowerVault ME5 disk" ruleset.
+
+item:
+ The disk location (for example {"0.0"}).
+
+discovery:
+ One service is created per disk.

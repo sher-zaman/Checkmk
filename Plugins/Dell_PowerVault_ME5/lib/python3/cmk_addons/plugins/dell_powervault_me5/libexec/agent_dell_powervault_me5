@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# License: GNU General Public License v2
+#
+###############################################################################
+# agent_dell_powervault_me5 - Special agent for Dell PowerVault ME5 storage
+###############################################################################
+# Author: Sher Zaman (sher_zaman@outlook.com), FirmaTrust
+###############################################################################
+#
+# Collects health, capacity and hardware data from Dell PowerVault ME5 series
+# storage systems through the controller HTTPS management API (the same CLI
+# "show" interface used by PowerVault Manager). One agent section is emitted
+# per show command, each carrying the JSON object array returned by the array.
+#
+# Authentication uses the documented ME5 local-account flow: SHA-256 of
+# "user_password", GET /api/login/<hash>. The returned session key is sent in
+# the sessionKey header on every request and reused for the whole run.
+#
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from typing import Any
+
+try:
+    import requests
+    from requests.packages.urllib3.exceptions import InsecureRequestWarning  # type: ignore
+    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)  # type: ignore
+except Exception as exc:  # pragma: no cover
+    sys.stderr.write(f"python 'requests' module is required: {exc}\n")
+    sys.exit(1)
+
+
+# section suffix -> (api path after /api/, top-level JSON key to emit)
+COMMANDS: list[tuple[str, str, str]] = [
+    ("system", "show/system", "system"),
+    ("controllers", "show/controllers", "controllers"),
+    ("disk_groups", "show/disk-groups", "disk-groups"),
+    ("pools", "show/pools", "pools"),
+    ("volumes", "show/volumes", "volumes"),
+    ("disks", "show/disks", "drives"),
+    ("power_supplies", "show/power-supplies", "power-supplies"),
+    ("sensors", "show/sensor-status", "sensors"),
+    ("unwritable_cache", "show/unwritable-cache", "unwritable-cache"),
+    ("versions", "show/versions", "versions"),
+    ("host_groups", "show/host-groups", "host-groups"),
+    ("initiators", "show/initiators", "initiator"),
+]
+
+SECTION_PREFIX = "dell_powervault_me5"
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser("agent_dell_powervault_me5")
+    parser.add_argument("--host", required=True, help="Controller management IP or hostname")
+    parser.add_argument("--user", required=True, help="API user")
+    parser.add_argument("--password", required=True, help="API password")
+    parser.add_argument(
+        "--auth-method",
+        choices=["sha256", "basic"],
+        default="sha256",
+        help="Login method (sha256 for local accounts)",
+    )
+    parser.add_argument("--protocol", choices=["https", "http"], default="https")
+    parser.add_argument("--timeout", type=int, default=30, help="Per-request timeout (s)")
+    parser.add_argument(
+        "--verify-ssl",
+        action="store_true",
+        default=False,
+        help="Verify the TLS certificate (off by default; ME5 ships a self-signed cert)",
+    )
+    parser.add_argument("--cacert", default=None, help="Path to a CA bundle for verification")
+    return parser.parse_args()
+
+
+def _base_url(args: argparse.Namespace) -> str:
+    return f"{args.protocol}://{args.host}"
+
+
+def _verify(args: argparse.Namespace) -> Any:
+    if not args.verify_ssl:
+        return False
+    return args.cacert if args.cacert else True
+
+
+def _login(session: requests.Session, args: argparse.Namespace, password: str) -> str:
+    base = _base_url(args)
+    headers = {"datatype": "json"}
+    verify = _verify(args)
+
+    if args.auth_method == "basic":
+        resp = session.get(
+            f"{base}/api/login",
+            auth=(args.user, password),
+            headers=headers,
+            verify=verify,
+            timeout=args.timeout,
+        )
+    else:
+        auth_hash = hashlib.sha256(f"{args.user}_{password}".encode("utf-8")).hexdigest()
+        resp = session.get(
+            f"{base}/api/login/{auth_hash}",
+            headers=headers,
+            verify=verify,
+            timeout=args.timeout,
+        )
+
+    resp.raise_for_status()
+    try:
+        payload = resp.json()
+    except ValueError:
+        payload = json.loads(resp.content.decode("utf-8", errors="replace"))
+
+    status = payload.get("status", [{}])[0]
+    if status.get("response-type-numeric") != 0:
+        raise RuntimeError(f"login failed: {status.get('response', 'unknown error')}")
+
+    session_key = status.get("response")
+    if not session_key:
+        raise RuntimeError("login succeeded but no session key was returned")
+    return session_key
+
+
+def _fetch(
+    session: requests.Session,
+    args: argparse.Namespace,
+    session_key: str,
+    api_path: str,
+) -> dict[str, Any] | None:
+    base = _base_url(args)
+    headers = {"sessionKey": session_key, "datatype": "json"}
+    resp = session.get(
+        f"{base}/api/{api_path}",
+        headers=headers,
+        verify=_verify(args),
+        timeout=args.timeout,
+    )
+    resp.raise_for_status()
+    try:
+        return resp.json()
+    except ValueError:
+        return json.loads(resp.content.decode("utf-8", errors="replace"))
+
+
+def _return_code_ok(payload: dict[str, Any]) -> bool:
+    # 0 = success, -1000..-1999 = warning (data still usable), other = failure
+    status = payload.get("status", [{}])
+    if not status:
+        return True
+    rc = status[-1].get("return-code", 0)
+    if rc == 0:
+        return True
+    if -1999 <= rc <= -1000:
+        return True
+    return False
+
+
+def _logout(session: requests.Session, args: argparse.Namespace, session_key: str) -> None:
+    try:
+        session.get(
+            f"{_base_url(args)}/api/exit",
+            headers={"sessionKey": session_key, "datatype": "json"},
+            verify=_verify(args),
+            timeout=args.timeout,
+        )
+    except Exception:
+        pass
+
+
+def main() -> int:
+    args = _parse_args()
+
+    password = args.password.strip()
+    if not password:
+        sys.stderr.write("no password supplied\n")
+        return 1
+
+    session = requests.Session()
+
+    try:
+        session_key = _login(session, args, password)
+    except Exception as exc:
+        sys.stderr.write(f"authentication error: {exc}\n")
+        return 1
+
+    exit_code = 0
+    try:
+        for suffix, api_path, key in COMMANDS:
+            try:
+                payload = _fetch(session, args, session_key, api_path)
+            except Exception as exc:
+                # A single command failing (e.g. unsupported on this firmware)
+                # must not abort the whole run.
+                sys.stderr.write(f"warning: {api_path} request failed: {exc}\n")
+                continue
+
+            if payload is None or not _return_code_ok(payload):
+                sys.stderr.write(f"warning: {api_path} returned an error status\n")
+                continue
+
+            data = payload.get(key)
+            if data is None:
+                continue
+
+            print(f"<<<{SECTION_PREFIX}_{suffix}:sep(0)>>>")
+            print(json.dumps(data, separators=(",", ":")))
+    finally:
+        _logout(session, args, session_key)
+
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

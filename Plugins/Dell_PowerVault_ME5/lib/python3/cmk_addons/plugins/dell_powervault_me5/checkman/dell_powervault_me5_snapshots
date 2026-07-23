@@ -1,0 +1,25 @@
+title: Dell PowerVault ME5: Snapshots
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the snapshots of a Dell PowerVault ME5 system, grouped by the source
+ volume they were taken from. Reports the snapshot count, the total snapshot
+ data and the age of the newest snapshot.
+
+ Optional upper levels on the newest snapshot age detect a stalled snapshot
+ schedule, alerting when no new snapshot has been taken within the configured
+ time (for example 26 hours warning and 50 hours critical for a daily
+ schedule). This is off by default because snapshot schedules vary.
+
+ The source volume is resolved from the snapshot parent, so discovery works on
+ any array regardless of snapshot naming. State is taken from the snapshot
+ health value reported by the array. Conditions are configurable via the "Dell
+ PowerVault ME5 snapshots" ruleset.
+
+item:
+ The source volume name.
+
+discovery:
+ One service is created per source volume that has snapshots.

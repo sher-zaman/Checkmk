@@ -1,0 +1,19 @@
+title: Dell PowerVault ME5: Connected Hosts
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the initiators connected to a Dell PowerVault ME5 system. An initiator
+ is discovered while it is connected, establishing a baseline; if it later
+ reports disconnected or is no longer present in the initiator table, the
+ service raises.
+
+ Conditions are configurable via the "Dell PowerVault ME5 connected host"
+ ruleset.
+
+item:
+ The initiator nickname or id.
+
+discovery:
+ One service is created per connected initiator.

@@ -1,0 +1,20 @@
+title: Dell PowerVault ME5: Sensors
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the non-temperature enclosure sensors of a Dell PowerVault ME5 system,
+ grouped by sensor type (voltage, current and the capacitor/supercap pack). One
+ service is created per sensor type and aggregates every sensor of that type:
+ the service reports the worst state across its members and names any sensor
+ that is not OK, with all readings shown in the service details.
+
+ The mapping of the not-OK condition is configurable via the "Dell PowerVault
+ ME5 sensor" ruleset.
+
+item:
+ The sensor type (for example {"Voltage"} or {"Current"}).
+
+discovery:
+ One service is created per non-temperature sensor type present.

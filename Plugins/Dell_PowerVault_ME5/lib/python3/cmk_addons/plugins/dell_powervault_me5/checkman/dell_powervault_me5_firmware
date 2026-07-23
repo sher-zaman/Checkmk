@@ -1,0 +1,15 @@
+title: Dell PowerVault ME5: Controller Firmware
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Reports the storage-controller firmware bundle version of each Dell PowerVault
+ ME5 controller. The service is informational and always OK; it shows "Not
+ Available" when a controller is offline and cannot report its version.
+
+item:
+ The controller id (for example {"A"} or {"B"}).
+
+discovery:
+ One service is created per controller.

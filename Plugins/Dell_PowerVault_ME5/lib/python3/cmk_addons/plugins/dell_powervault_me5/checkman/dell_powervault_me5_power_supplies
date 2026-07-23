@@ -1,0 +1,17 @@
+title: Dell PowerVault ME5: Power Supplies
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the power supply units of a Dell PowerVault ME5 enclosure, including
+ health and status.
+
+ State is taken from the power-supply health value reported by the array.
+ Conditions are configurable via the "Dell PowerVault ME5 power supply" ruleset.
+
+item:
+ The power supply name (for example {"PSU 0, Left"}).
+
+discovery:
+ One service is created per power supply.

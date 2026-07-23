@@ -1,0 +1,18 @@
+title: Dell PowerVault ME5: Temperature Sensors
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the temperature sensors of a Dell PowerVault ME5 system (controller,
+ ASIC, capacitor pack and enclosure sensors).
+
+ The check registers against the built-in Checkmk "Temperature" ruleset, so the
+ standard temperature levels, trend computation and unit display apply
+ (default upper levels 60/70 degrees Celsius).
+
+item:
+ The sensor durable id (for example {"sensor_temp_ctrl_B.1"}).
+
+discovery:
+ One service is created per temperature sensor that reports a reading.

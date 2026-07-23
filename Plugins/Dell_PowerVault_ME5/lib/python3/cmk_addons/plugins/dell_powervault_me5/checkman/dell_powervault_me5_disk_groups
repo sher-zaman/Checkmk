@@ -1,0 +1,18 @@
+title: Dell PowerVault ME5: Disk Groups
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the disk groups of a Dell PowerVault ME5 system: the fault-tolerance
+ status, RAID level, member and spare counts and any running background job. A
+ verify or scrub is treated as normal maintenance; a reconstruct is alertable.
+
+ State is taken from the disk-group status reported by the array. Conditions
+ are configurable via the "Dell PowerVault ME5 disk group" ruleset.
+
+item:
+ The disk group name (for example {"dgA01"}).
+
+discovery:
+ One service is created per disk group.

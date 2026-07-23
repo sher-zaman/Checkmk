@@ -1,0 +1,14 @@
+title: Dell PowerVault ME5: Unwritable Cache
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the percentage of cache data on a Dell PowerVault ME5 system that
+ cannot be written to disk, per controller. Unwritable cache indicates data at
+ risk, so the default upper levels raise even at 1 percent.
+
+ Levels are configurable via the "Dell PowerVault ME5 unwritable cache" ruleset.
+
+discovery:
+ One service is created per array.
