@@ -83,7 +83,7 @@ metric_dell_me5_ssd_life_left_percent = Metric(
     name="dell_me5_ssd_life_left_percent",
     title=Title("SSD life left"),
     unit=_PERCENT,
-    color=Color.LIGHT_GREEN,
+    color=Color.GREEN,
 )
 
 metric_dell_me5_snapshot_count = Metric(
@@ -105,6 +105,60 @@ metric_dell_me5_snapshot_age = Metric(
     title=Title("Newest snapshot age"),
     unit=Unit(TimeNotation()),
     color=Color.CYAN,
+)
+
+_BYTES_PER_SEC = Unit(IECNotation("B/s"))
+
+metric_dell_me5_hostport_throughput = Metric(
+    name="dell_me5_hostport_throughput",
+    title=Title("Host port throughput"),
+    unit=_BYTES_PER_SEC,
+    color=Color.BLUE,
+)
+
+metric_dell_me5_hostport_iops = Metric(
+    name="dell_me5_hostport_iops",
+    title=Title("Host port IOPS"),
+    unit=Unit(DecimalNotation("IO/s")),
+    color=Color.GREEN,
+)
+
+metric_dell_me5_hostport_latency = Metric(
+    name="dell_me5_hostport_latency",
+    title=Title("Host port average response time"),
+    unit=Unit(TimeNotation()),
+    color=Color.ORANGE,
+)
+
+metric_dell_me5_hostport_read_latency = Metric(
+    name="dell_me5_hostport_read_latency",
+    title=Title("Host port read response time"),
+    unit=Unit(TimeNotation()),
+    color=Color.CYAN,
+)
+
+metric_dell_me5_hostport_write_latency = Metric(
+    name="dell_me5_hostport_write_latency",
+    title=Title("Host port write response time"),
+    unit=Unit(TimeNotation()),
+    color=Color.YELLOW,
+)
+
+metric_dell_me5_hostport_queue_depth = Metric(
+    name="dell_me5_hostport_queue_depth",
+    title=Title("Host port queue depth"),
+    unit=Unit(DecimalNotation("")),
+    color=Color.PURPLE,
+)
+
+graph_dell_me5_hostport_latency = Graph(
+    name="dell_me5_hostport_latency",
+    title=Title("ME5 host port response time"),
+    simple_lines=[
+        "dell_me5_hostport_read_latency",
+        "dell_me5_hostport_write_latency",
+        "dell_me5_hostport_latency",
+    ],
 )
 
 graph_dell_me5_unwritable_cache = Graph(

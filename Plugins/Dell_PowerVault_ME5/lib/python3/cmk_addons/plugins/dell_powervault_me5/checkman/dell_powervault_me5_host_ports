@@ -4,13 +4,17 @@ catalog: hw/storagehw/dell
 license: GPLv2
 distribution: Sher Zaman
 description:
- Monitors the host ports of a Dell PowerVault ME5 system, including port health,
- link status, port type and negotiated speed.
+ Monitors each host port of a Dell PowerVault ME5 system in a single service:
+ port health, link status, type and negotiated speed, together with the port's
+ I/O statistics (throughput, IOPS, average/read/write response time, queue
+ depth, and total data read and written since the last counter reset).
 
  State is taken from the port health value reported by the array. A link status
  other than Up is Critical by default; for ports that are intentionally uncabled,
- add a rule scoped to those ports and set the link status state to OK. All
- conditions are configurable via the "Dell PowerVault ME5 host port" ruleset.
+ add a rule scoped to those ports and set the link status state to OK.
+ Throughput and IOPS are graphed for trending, and optional upper levels on
+ throughput, IOPS, response time and queue depth are available. All conditions
+ are configurable via the "Dell PowerVault ME5 host port" ruleset.
 
 item:
  The port id (for example {"A0"}).

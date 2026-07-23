@@ -45,6 +45,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("disks", "show/disks", "drives"),
     ("power_supplies", "show/power-supplies", "power-supplies"),
     ("sensors", "show/sensor-status", "sensors"),
+    ("host_port_statistics", "show/host-port-statistics", "host-port-statistics"),
     ("unwritable_cache", "show/unwritable-cache", "unwritable-cache"),
     ("versions", "show/versions", "versions"),
     ("host_groups", "show/host-groups", "host-groups"),
@@ -188,6 +189,7 @@ def main() -> int:
         return 1
 
     exit_code = 0
+    collected: dict[str, Any] = {}
     try:
         for suffix, api_path, key in COMMANDS:
             try:
@@ -206,8 +208,41 @@ def main() -> int:
             if data is None:
                 continue
 
+            collected[suffix] = data
+
+            # host-port statistics are not emitted on their own; they are
+            # merged into the host_ports section below.
+            if suffix == "host_port_statistics":
+                continue
+
             print(f"<<<{SECTION_PREFIX}_{suffix}:sep(0)>>>")
             print(json.dumps(data, separators=(",", ":")))
+
+        # Combined host ports section: each port from show controllers, enriched
+        # with its I/O statistics. Emitting one joined section keeps the check
+        # simple and reliable (single section, one service per port).
+        controllers = collected.get("controllers")
+        if isinstance(controllers, list):
+            stats_by_port: dict[str, Any] = {}
+            for stat in collected.get("host_port_statistics") or []:
+                did = str(stat.get("durable-id", ""))
+                pid = did[len("hostport_"):] if did.startswith("hostport_") else did
+                if pid:
+                    stats_by_port[pid] = stat
+
+            ports_out = []
+            for ctrl in controllers:
+                for port in ctrl.get("port", []) or []:
+                    pid = port.get("port")
+                    if not pid:
+                        continue
+                    enriched = dict(port)
+                    enriched["statistics"] = stats_by_port.get(str(pid), {})
+                    ports_out.append(enriched)
+
+            if ports_out:
+                print(f"<<<{SECTION_PREFIX}_host_ports:sep(0)>>>")
+                print(json.dumps(ports_out, separators=(",", ":")))
     finally:
         _logout(session, args, session_key)
 

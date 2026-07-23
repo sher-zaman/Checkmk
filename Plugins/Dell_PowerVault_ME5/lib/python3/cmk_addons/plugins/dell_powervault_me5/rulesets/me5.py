@@ -163,10 +163,13 @@ def _form_host_ports() -> Dictionary:
     return Dictionary(
         title=Title("Dell PowerVault ME5 host port"),
         help_text=Help(
-            "Monitoring states for host port health and link status. A link "
-            "status other than Up is Critical by default. For ports that are "
-            "intentionally uncabled, add a rule scoped to those ports and set "
-            "the link status state to OK so they do not alert."
+            "Monitoring states for host port health and link status, and "
+            "optional upper levels on the port's I/O statistics (throughput, "
+            "IOPS, average response time and queue depth). A link status other "
+            "than Up is Critical by default; for ports that are intentionally "
+            "uncabled, add a rule scoped to those ports and set the link status "
+            "state to OK. The I/O levels are off by default; throughput and "
+            "IOPS are graphed for trending."
         ),
         elements={
             **_health_elements(),
@@ -175,6 +178,44 @@ def _form_host_ports() -> Dictionary:
                 parameter_form=ServiceState(
                     title=Title("State when the port link status is not Up"),
                     prefill=DefaultValue(2),
+                ),
+            ),
+            "levels_throughput": DictElement(
+                required=False,
+                parameter_form=SimpleLevels(
+                    title=Title("Upper levels on throughput"),
+                    form_spec_template=Float(unit_symbol="B/s"),
+                    level_direction=LevelDirection.UPPER,
+                    prefill_fixed_levels=DefaultValue(value=(1e9, 1.15e9)),
+                ),
+            ),
+            "levels_iops": DictElement(
+                required=False,
+                parameter_form=SimpleLevels(
+                    title=Title("Upper levels on IOPS"),
+                    form_spec_template=Integer(unit_symbol="IO/s"),
+                    level_direction=LevelDirection.UPPER,
+                    prefill_fixed_levels=DefaultValue(value=(50000, 100000)),
+                ),
+            ),
+            "levels_latency": DictElement(
+                required=False,
+                parameter_form=SimpleLevels(
+                    title=Title("Upper levels on average response time"),
+                    form_spec_template=TimeSpan(
+                        displayed_magnitudes=[TimeMagnitude.MILLISECOND, TimeMagnitude.SECOND]
+                    ),
+                    level_direction=LevelDirection.UPPER,
+                    prefill_fixed_levels=DefaultValue(value=(0.02, 0.05)),
+                ),
+            ),
+            "levels_queue": DictElement(
+                required=False,
+                parameter_form=SimpleLevels(
+                    title=Title("Upper levels on queue depth"),
+                    form_spec_template=Integer(),
+                    level_direction=LevelDirection.UPPER,
+                    prefill_fixed_levels=DefaultValue(value=(32, 64)),
                 ),
             ),
         },

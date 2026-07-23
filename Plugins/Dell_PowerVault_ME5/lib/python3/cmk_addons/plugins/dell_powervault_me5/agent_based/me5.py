@@ -305,56 +305,131 @@ check_plugin_me5_firmware = CheckPlugin(
 )
 
 
-# ---- Host ports (one service per port, discovered from controllers) -------
+# ---- Host ports (one service per port: health, link and I/O) --------------
+#
+# Reads the combined host_ports section emitted by the agent, where each port
+# from "show controllers" is enriched with its "show host-port-statistics"
+# entry under the "statistics" key. Single section, so discovery is simple
+# and reliable.
 
 
-def _iter_ports(section: Mapping[str, Mapping[str, Any]]) -> Any:
-    for ctrl in section.values():
-        ports = ctrl.get("port")
-        if isinstance(ports, list):
-            for port in ports:
-                pid = port.get("port")
-                if pid:
-                    yield str(pid), port
+def parse_me5_host_ports(string_table: StringTable) -> Mapping[str, Mapping[str, Any]] | None:
+    data = _load(string_table)
+    if not isinstance(data, list):
+        return None
+    result: dict[str, Mapping[str, Any]] = {}
+    for port in data:
+        pid = port.get("port")
+        if pid:
+            result[str(pid)] = port
+    return result or None
+
+
+agent_section_me5_host_ports = AgentSection(
+    name="dell_powervault_me5_host_ports",
+    parse_function=parse_me5_host_ports,
+)
+
+
+def _us_to_seconds(value: Any) -> float | None:
+    micros = _as_float(value)
+    return micros / 1_000_000.0 if micros is not None else None
 
 
 def discover_me5_host_ports(section: Mapping[str, Mapping[str, Any]]) -> DiscoveryResult:
-    for pid, _port in _iter_ports(section):
+    for pid in section:
         yield Service(item=pid)
 
 
 def check_me5_host_ports(
     item: str, params: Mapping[str, Any], section: Mapping[str, Mapping[str, Any]]
 ) -> CheckResult:
-    for pid, port in _iter_ports(section):
-        if pid != item:
-            continue
-
-        yield Result(
-            state=_health_state(_as_int(port.get("health-numeric")), params),
-            summary=f"Health: {port.get('health', 'unknown')}",
-            details=port.get("health-reason") or None,
-        )
-
-        status = port.get("status")
-        if status is not None:
-            link_state = State.OK
-            if _as_int(port.get("status-numeric")) != 0:
-                link_state = State(int(params.get("state_not_up", 0)))
-            yield Result(state=link_state, summary=f"{port.get('port-type', '')} {status}")
-
-        speed = port.get("actual-speed")
-        if speed and str(speed).lower() not in ("", "unknown"):
-            yield Result(state=State.OK, notice=f"Speed: {speed}")
+    port = section.get(item)
+    if not port:
+        yield Result(state=State.UNKNOWN, summary="Port not found")
         return
 
-    yield Result(state=State.UNKNOWN, summary="Port not found")
+    yield Result(
+        state=_health_state(_as_int(port.get("health-numeric")), params),
+        summary=f"Health: {port.get('health', 'unknown')}",
+        details=port.get("health-reason") or None,
+    )
+
+    status = port.get("status")
+    if status is not None:
+        link_state = State.OK
+        if _as_int(port.get("status-numeric")) != 0:
+            link_state = State(int(params.get("state_not_up", 2)))
+        yield Result(state=link_state, summary=f"{port.get('port-type', '')} {status}")
+
+    speed = port.get("actual-speed")
+    if speed and str(speed).lower() not in ("", "unknown"):
+        yield Result(state=State.OK, notice=f"Speed: {speed}")
+
+    stats = port.get("statistics") or {}
+    if not stats:
+        return
+
+    throughput = _as_float(stats.get("bytes-per-second-numeric"))
+    if throughput is not None:
+        yield from check_levels(
+            throughput,
+            levels_upper=params.get("levels_throughput"),
+            metric_name="dell_me5_hostport_throughput",
+            label="Throughput",
+            render_func=render.iobandwidth,
+        )
+
+    iops = _as_float(stats.get("iops"))
+    if iops is not None:
+        yield from check_levels(
+            iops,
+            levels_upper=params.get("levels_iops"),
+            metric_name="dell_me5_hostport_iops",
+            label="IOPS",
+            render_func=lambda v: f"{v:.0f}",
+        )
+
+    latency = _us_to_seconds(stats.get("avg-rsp-time"))
+    if latency is not None:
+        yield from check_levels(
+            latency,
+            levels_upper=params.get("levels_latency"),
+            metric_name="dell_me5_hostport_latency",
+            label="Avg response time",
+            render_func=render.timespan,
+        )
+
+    queue = _as_float(stats.get("queue-depth"))
+    if queue is not None:
+        yield from check_levels(
+            queue,
+            levels_upper=params.get("levels_queue"),
+            metric_name="dell_me5_hostport_queue_depth",
+            label="Queue depth",
+            render_func=lambda v: f"{v:.0f}",
+            notice_only=True,
+        )
+
+    read_us = _us_to_seconds(stats.get("avg-read-rsp-time"))
+    write_us = _us_to_seconds(stats.get("avg-write-rsp-time"))
+    if read_us is not None:
+        yield Metric("dell_me5_hostport_read_latency", read_us)
+    if write_us is not None:
+        yield Metric("dell_me5_hostport_write_latency", write_us)
+
+    data_read = stats.get("data-read")
+    data_written = stats.get("data-written")
+    if data_read or data_written:
+        yield Result(
+            state=State.OK,
+            notice=f"Since counter reset: {data_read or '?'} read, {data_written or '?'} written",
+        )
 
 
 check_plugin_me5_host_ports = CheckPlugin(
     name="dell_powervault_me5_host_ports",
     service_name="ME5 Host Port %s",
-    sections=["dell_powervault_me5_controllers"],
     discovery_function=discover_me5_host_ports,
     check_function=check_me5_host_ports,
     check_default_parameters={
@@ -362,6 +437,7 @@ check_plugin_me5_host_ports = CheckPlugin(
         "state_fault": 2,
         "state_unknown": 1,
         "state_not_up": 2,
+        # I/O levels off by default; throughput and IOPS are graphed only
     },
     check_ruleset_name="dell_me5_host_ports",
 )
