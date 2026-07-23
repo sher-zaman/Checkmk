@@ -7,8 +7,8 @@ A personal collection of Checkmk monitoring plugins and scripts, built and maint
 ```
 Checkmk/
 ├── Plugins/     Checkmk extensions and agent plugins
-├── Scripts/     Checkmk local checks (PowerShell, deployed to the agent's local/ directory)
-└── Docs/        One README per script, matching the names in Scripts/
+└── Scripts/     Checkmk local checks (PowerShell, deployed to the agent's local/ directory)
+    └── Docs/    One README per script, matching the names in Scripts/
 ```
 
 ### Plugins/
@@ -22,14 +22,13 @@ Current plugins:
 - **DHCP_Failover**: Windows DHCP failover relationship monitoring, agent-based with Agent Bakery support
 - **System_Reboot_Required**: pending reboot detection for Linux hosts across major distributions. Maintenance fork of Luca-Leon Hausdoerfer's plugin, GPLv3
 - **VCSA_Health**: VMware vCenter Server Appliance health monitoring via REST API, special agent, no Checkmk agent required
+- **Dell_PowerVault_ME5**: hardware health monitoring for Dell EMC PowerVault ME5 storage arrays via Redfish, covering sensors, disks, snapshots, and connected hosts
 
-## Scripts/
+### Scripts/
 
 Standalone PowerShell local checks, deployed to the Checkmk agent's `local/` directory. These run independently and produce their own check output. This folder is being phased out in favor of packaged extensions under `Plugins/`.
 
-## Docs/
-
-Documentation for the scripts in `Scripts/`, one file per script.
+`Scripts/Docs/` holds one README per script, matching the names above.
 
 ## License
 
