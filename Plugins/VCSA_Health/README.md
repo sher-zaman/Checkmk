@@ -32,7 +32,7 @@ The backup and certificate services are optional: if the account lacks the corre
 
 For services, health areas, resource and filesystem usage, update, and uptime, the monitoring account must be a member of the `SystemConfiguration.Administrators` group (Administration > Single Sign On > Users and Groups > Groups). A plain read-only group is not sufficient for the services and monitoring endpoints.
 
-The certificate service is optional and needs an extra privilege the built-in Read-only role does not include. To enable it, clone the Read-only role (Administration > Access Control > Roles), add the Certificate Management "Administer" privilege, and assign the cloned role to the monitoring account under Global Permissions with propagation to children. Rerun discovery and the certificate service appears.
+The certificate service is optional and needs an extra privilege the built-in Read-only role does not include. To enable it: in the vSphere Client, go to Administration > Access Control > Roles, clone the Read-only role, add the "Certificate Management" privilege (the Administer entry), and save it. Then assign that cloned role to the monitoring account under Global Permissions with Propagate to children. Rerun discovery and the VCSA Certificate service appears.
 
 ## Installation
 
@@ -43,7 +43,7 @@ The certificate service is optional and needs an extra privilege the built-in Re
 
 ## Superseded package
 
-This extension supersedes the legacy `vcsa7_health_status` package by Thomas Sielaff and Martin Hasin, which targets the pre-2.0 plugin APIs and is not compatible with Checkmk 2.3 and later. If the old package is installed, remove it and its datasource rule before installing this one. Services are discovered under new names, so a fresh service discovery is required.
+This extension supersedes the legacy `vcsa7_health_status` package by Thomas Sielaff and Martin Hasin, which targets the pre-2.0 plugin APIs and is not compatible with Checkmk 2.3 and later.
 
 ## Notes
 
