@@ -1,0 +1,18 @@
+title: VMware vCenter Server Appliance: CPU, Memory and Swap Utilization
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the CPU, memory and swap utilization of a VMware
+ vCenter Server Appliance (VCSA) using the appliance monitoring API.
+ The data is retrieved by the special agent {agent_vcsa_health}.
+
+ Upper levels on the utilization can be configured via the ruleset
+ "VCSA resource utilization". The default levels are 80/90 percent.
+
+item:
+ The resource: CPU, Memory or Swap.
+
+discovery:
+ One service is created for each available resource metric.

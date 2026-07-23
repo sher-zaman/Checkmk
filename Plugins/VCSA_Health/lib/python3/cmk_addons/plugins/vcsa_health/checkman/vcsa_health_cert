@@ -1,0 +1,18 @@
+title: VMware vCenter Server Appliance: Machine TLS Certificate
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the remaining validity of the machine TLS
+ certificate of a VMware vCenter Server Appliance (VCSA). The data is
+ retrieved by the special agent {agent_vcsa_health} from the vCenter
+ certificate management API.
+
+ Lower levels on the remaining validity can be configured via the
+ ruleset "VCSA TLS certificate". The default levels are 30 days {WARN}
+ and 15 days {CRIT}. An expired certificate is always {CRIT}.
+
+discovery:
+ One service is created if the certificate information is accessible
+ with the configured account.

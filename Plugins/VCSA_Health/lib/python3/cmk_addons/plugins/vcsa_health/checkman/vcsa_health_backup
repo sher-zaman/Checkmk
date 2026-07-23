@@ -1,0 +1,19 @@
+title: VMware vCenter Server Appliance: File-Based Backup
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the most recent file-based (VAMI) backup job of a
+ VMware vCenter Server Appliance (VCSA). The data is retrieved by the
+ special agent {agent_vcsa_health} from the appliance REST API.
+
+ The state is {CRIT} if the last backup job failed and the age of the
+ last completed backup is checked against configurable levels via the
+ ruleset "VCSA file-based backup". The default levels are 26 hours
+ {WARN} and 50 hours {CRIT}, matching a daily backup schedule.
+
+discovery:
+ One service is created if at least one backup job is reported by the
+ appliance. Appliances without a configured file-based backup do not
+ get this service.

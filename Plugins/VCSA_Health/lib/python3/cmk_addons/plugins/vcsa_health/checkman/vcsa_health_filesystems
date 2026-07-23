@@ -1,0 +1,19 @@
+title: VMware vCenter Server Appliance: Filesystem Usage
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the usage of the individual filesystems of a
+ VMware vCenter Server Appliance (VCSA), such as the root, seat, db,
+ dblog and log partitions. The data is retrieved by the special agent
+ {agent_vcsa_health} from the appliance monitoring API.
+
+ Upper levels on the used space can be configured via the ruleset
+ "VCSA filesystem usage". The default levels are 80/90 percent.
+
+item:
+ The name of the filesystem.
+
+discovery:
+ One service is created for each filesystem reported by the appliance.

@@ -1,0 +1,28 @@
+title: VMware vCenter Server Appliance: vMon Service State
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the state and health of the vMon services running
+ on a VMware vCenter Server Appliance (VCSA), such as vpxd, vsphere-ui,
+ sps or vsan-health. The data is retrieved by the special agent
+ {agent_vcsa_health} from the appliance REST API.
+
+ Services with startup type AUTOMATIC are handled by their running state
+ and health: a service that is not running is {CRIT}, a running service
+ reporting degraded health is {CRIT} and one reporting healthy with
+ warnings is {WARN}. Services with startup type MANUAL or DISABLED that
+ are not running are {OK} by default. All of these states are
+ configurable via the ruleset "VCSA vMon service states". Health
+ messages provided by the appliance are shown in the service details.
+
+ Supported appliance versions are VCSA 7.x, 8.x and 9.x. On vCenter 8.0
+ U3 and later the service list is read from the /api/vcenter/services
+ endpoint; older builds use the legacy vMon endpoint automatically.
+
+item:
+ The name of the vMon service.
+
+discovery:
+ One service is created for each vMon service reported by the appliance.

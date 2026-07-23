@@ -1,0 +1,411 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# agent_vcsa_health - Checkmk special agent for VMware vCenter Server
+# Appliance (VCSA) health monitoring via the appliance REST API.
+#
+# Copyright (C) 2026 Sher Zaman <sher_zaman@outlook.com>
+#
+# Supersedes the legacy "vcsa7_health_status" package originally created
+# by Thomas Sielaff and Martin Hasin.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation.
+#
+# Supported appliance versions: vCenter Server Appliance 7.x, 8.x and 9.x.
+# All data is retrieved from the /api appliance management endpoints
+# introduced with vCenter 7.0. Individual endpoint failures are tolerated:
+# the corresponding section is simply omitted so the remaining checks
+# keep working (e.g. restricted permissions or endpoints removed in
+# future releases).
+
+import argparse
+import json
+import sys
+from datetime import datetime, timedelta, timezone
+
+import requests
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Appliance health areas: (api path suffix, item name used in service)
+HEALTH_AREAS = [
+    ("applmgmt", "Appliance Management"),
+    ("database", "Database"),
+    ("database-storage", "Database Storage"),
+    ("load", "Load"),
+    ("mem", "Memory"),
+    ("software-packages", "Software Packages"),
+    ("storage", "Storage"),
+    ("swap", "Swap"),
+    ("system", "System"),
+]
+
+# Utilization resources are matched against the appliance monitoring catalog
+# by category, because the concrete metric id differs between builds (for
+# example mem.util vs mem.usage). Only percent metrics are used.
+PERF_CATEGORIES = {
+    "com.vmware.applmgmt.mon.cat.cpu": "CPU",
+    "com.vmware.applmgmt.mon.cat.memory": "Memory",
+    "com.vmware.applmgmt.mon.cat.swap": "Swap",
+}
+
+
+def parse_args(argv):
+    parser = argparse.ArgumentParser(description="Checkmk VCSA health special agent")
+    parser.add_argument("host", help="Hostname or IP address of the VCSA")
+    parser.add_argument("--username", required=True, help="API username")
+    parser.add_argument(
+        "--password",
+        help="API password (if omitted, the password is read from stdin)",
+    )
+    parser.add_argument(
+        "--no-cert-check",
+        action="store_true",
+        help="Disable TLS certificate verification",
+    )
+    parser.add_argument("--timeout", type=int, default=30, help="Request timeout in seconds")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Dump raw API responses to stderr and raise exceptions",
+    )
+    return parser.parse_args(argv)
+
+
+def sanitize(value):
+    """Make arbitrary text safe for a sep(59) section line."""
+    return str(value).replace(";", ",").replace("\n", " ").replace("\r", " ").strip()
+
+
+def to_epoch(timestamp):
+    """Convert an ISO 8601 timestamp from the API to a unix epoch float."""
+    if not timestamp:
+        return None
+    try:
+        return datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+class VcsaSession:
+    def __init__(self, args):
+        self._base = "https://%s" % args.host
+        self._timeout = args.timeout
+        self._debug = args.debug
+        self._session = requests.Session()
+        # Pass the verify setting explicitly on every request. Setting it only
+        # on the session is not reliable: when REQUESTS_CA_BUNDLE or
+        # SSL_CERT_FILE is present in the environment (as in an OMD site), the
+        # requests library merges those back in and overrides a session-level
+        # verify=False. A per-request value cannot be overridden this way,
+        # while verify=True still honours the environment CA bundle.
+        self._verify = not args.no_cert_check
+
+    def login(self, username, password):
+        response = self._session.post(
+            self._base + "/api/session",
+            auth=(username, password),
+            timeout=self._timeout,
+            verify=self._verify,
+        )
+        if response.status_code not in (200, 201):
+            sys.stderr.write(
+                "Login to %s/api/session failed with HTTP %s\n"
+                % (self._base, response.status_code)
+            )
+            sys.exit(1)
+        self._session.headers["vmware-api-session-id"] = response.json()
+
+    def logout(self):
+        try:
+            self._session.delete(
+                self._base + "/api/session",
+                timeout=self._timeout,
+                verify=self._verify,
+            )
+        except requests.RequestException:
+            pass
+
+    def get(self, path, params=None):
+        """GET an API path. Returns parsed JSON or None on any failure."""
+        try:
+            response = self._session.get(
+                self._base + path,
+                params=params,
+                timeout=self._timeout,
+                verify=self._verify,
+            )
+        except requests.RequestException as exc:
+            if self._debug:
+                sys.stderr.write("GET %s failed: %s\n" % (path, exc))
+            return None
+        if self._debug:
+            sys.stderr.write(
+                "GET %s -> HTTP %s\n%s\n" % (path, response.status_code, response.text[:4000])
+            )
+        if response.status_code != 200:
+            return None
+        try:
+            return response.json()
+        except ValueError:
+            return None
+
+
+def section_services(api):
+    # The vMon service list moved from /api/appliance/vmon/services (removed
+    # in vCenter 8.0 U3) to /api/vcenter/services. Try the current endpoint
+    # first and fall back to the legacy one for older 7.x/8.x builds.
+    data = api.get("/api/vcenter/services")
+    if not isinstance(data, dict):
+        data = api.get("/api/appliance/vmon/services")
+    if not isinstance(data, dict):
+        return
+    print("<<<vcsa_health_services:sep(59)>>>")
+    for name, svc in sorted(data.items()):
+        if not isinstance(svc, dict):
+            continue
+        messages = []
+        for msg in svc.get("health_messages", []):
+            text = msg.get("default_message", "")
+            args = [str(a) for a in msg.get("args", [])]
+            try:
+                text = text % tuple(args) if args and "%" in text else text
+            except (TypeError, ValueError):
+                pass
+            if text:
+                messages.append(sanitize(text))
+        print(
+            "%s;%s;%s;%s;%s"
+            % (
+                sanitize(name),
+                sanitize(svc.get("startup_type", "")),
+                sanitize(svc.get("state", "")),
+                sanitize(svc.get("health", "-")) or "-",
+                " / ".join(messages),
+            )
+        )
+
+
+def section_appliance_health(api):
+    lines = []
+    for suffix, item in HEALTH_AREAS:
+        data = api.get("/api/appliance/health/%s" % suffix)
+        if isinstance(data, str) and data:
+            lines.append("%s;%s" % (item, sanitize(data.lower())))
+    if lines:
+        print("<<<vcsa_health_appliance:sep(59)>>>")
+        for line in lines:
+            print(line)
+
+
+def query_monitoring(api, names):
+    """Query the appliance monitoring API for the given metric IDs."""
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=30)
+    params = [
+        ("item.interval", "MINUTES5"),
+        ("item.function", "AVG"),
+        ("item.start_time", start.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
+        ("item.end_time", end.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
+    ] + [("item.names", name) for name in names]
+    data = api.get("/api/appliance/monitoring/query", params=params)
+    if data is None:
+        # Fall back to the parameter style without the "item." prefix
+        params = [(key.replace("item.", ""), value) for key, value in params]
+        data = api.get("/api/appliance/monitoring/query", params=params)
+    if not isinstance(data, list):
+        return {}
+    results = {}
+    for entry in data:
+        name = entry.get("name")
+        points = [p for p in entry.get("data", []) if p not in ("", None)]
+        if name and points:
+            try:
+                results[name] = float(points[-1])
+            except ValueError:
+                continue
+    return results
+
+
+def sections_monitoring(api):
+    available = api.get("/api/appliance/monitoring")
+    if not isinstance(available, list):
+        return
+    catalog = {m.get("id"): m for m in available if isinstance(m, dict)}
+
+    # CPU / memory / swap utilization: pick the percent metric advertised for
+    # each resource category, whatever its concrete id happens to be.
+    perf_map = {}  # metric id -> resource label (CPU/Memory/Swap)
+    for mid, meta in catalog.items():
+        if not isinstance(mid, str) or not isinstance(meta, dict):
+            continue
+        category = meta.get("category", "")
+        units = str(meta.get("units", "")).lower()
+        resource = PERF_CATEGORIES.get(category)
+        if resource and "percent" in units and resource not in perf_map.values():
+            perf_map[mid] = resource
+
+    perf_values = query_monitoring(api, list(perf_map)) if perf_map else {}
+    perf_lines = [
+        "%s;%s;percent" % (perf_map[mid], value)
+        for mid, value in perf_values.items()
+        if mid in perf_map
+    ]
+    if perf_lines:
+        print("<<<vcsa_health_perf:sep(59)>>>")
+        for line in sorted(perf_lines):
+            print(line)
+
+    # Per-filesystem storage usage
+    fs_names = [
+        mid
+        for mid in catalog
+        if isinstance(mid, str)
+        and (
+            mid.startswith("storage.used.filesystem.")
+            or mid.startswith("storage.totalsize.filesystem.")
+        )
+    ]
+    fs_values = query_monitoring(api, fs_names) if fs_names else {}
+    filesystems = {}
+    for name, value in fs_values.items():
+        parts = name.split(".")
+        if len(parts) < 4:
+            continue
+        kind, fs = parts[1], ".".join(parts[3:])
+        unit = str(catalog.get(name, {}).get("units", ""))
+        if "kb" in unit.lower():
+            value *= 1024  # convert to bytes
+        filesystems.setdefault(fs, {})[kind] = value
+    fs_lines = [
+        "%s;%s;%s" % (sanitize(fs), values["used"], values["totalsize"])
+        for fs, values in sorted(filesystems.items())
+        if "used" in values and "totalsize" in values and values["totalsize"] > 0
+    ]
+    if fs_lines:
+        print("<<<vcsa_health_filesystems:sep(59)>>>")
+        for line in fs_lines:
+            print(line)
+
+
+def section_update(api):
+    update = api.get("/api/appliance/update")
+    version = api.get("/api/appliance/system/version")
+    if not isinstance(update, dict) and not isinstance(version, dict):
+        return
+    print("<<<vcsa_health_update:sep(59)>>>")
+    if isinstance(update, dict):
+        print(
+            "update;%s;%s;%s"
+            % (
+                sanitize(update.get("state", "")),
+                sanitize(update.get("version", "")),
+                to_epoch(update.get("latest_query_time")) or "",
+            )
+        )
+    if isinstance(version, dict):
+        print(
+            "version;%s;%s;%s"
+            % (
+                sanitize(version.get("version", "")),
+                sanitize(version.get("build", "")),
+                sanitize(version.get("product", "")),
+            )
+        )
+
+
+def section_backup(api):
+    data = api.get("/api/appliance/recovery/backup/job/details")
+    if not isinstance(data, dict) or not data:
+        return
+    jobs = []
+    for job_id, job in data.items():
+        if not isinstance(job, dict):
+            continue
+        start = to_epoch(job.get("start_time"))
+        jobs.append((start or 0.0, job_id, job))
+    if not jobs:
+        return
+    jobs.sort()
+    start_epoch, job_id, job = jobs[-1]
+    messages = []
+    for msg in job.get("messages", []):
+        if isinstance(msg, dict):
+            text = msg.get("default_message") or ""
+            if text:
+                messages.append(sanitize(text))
+    print("<<<vcsa_health_backup:sep(59)>>>")
+    print(
+        "%s;%s;%s;%s;%s;%s"
+        % (
+            sanitize(job_id),
+            sanitize(job.get("status", job.get("state", ""))),
+            sanitize(job.get("type", "")),
+            start_epoch or "",
+            to_epoch(job.get("end_time")) or "",
+            " / ".join(messages[:3]),
+        )
+    )
+
+
+def section_certificate(api):
+    data = api.get("/api/vcenter/certificate-management/vcenter/tls")
+    if not isinstance(data, dict):
+        return
+    valid_to = to_epoch(data.get("valid_to"))
+    if valid_to is None:
+        return
+    print("<<<vcsa_health_cert:sep(59)>>>")
+    print(
+        "tls;%s;%s;%s"
+        % (
+            valid_to,
+            sanitize(data.get("subject_dn", "")),
+            sanitize(data.get("issuer_dn", "")),
+        )
+    )
+
+
+def section_uptime(api):
+    data = api.get("/api/appliance/system/uptime")
+    if isinstance(data, (int, float)):
+        print("<<<uptime>>>")
+        print(int(data))
+
+
+def main(argv=None):
+    args = parse_args(argv if argv is not None else sys.argv[1:])
+    password = args.password if args.password is not None else sys.stdin.readline().rstrip("\n")
+
+    api = VcsaSession(args)
+    try:
+        api.login(args.username, password)
+    except requests.RequestException as exc:
+        if args.debug:
+            raise
+        sys.stderr.write("Connection to %s failed: %s\n" % (args.host, exc))
+        return 1
+
+    try:
+        section_services(api)
+        section_appliance_health(api)
+        sections_monitoring(api)
+        section_update(api)
+        section_backup(api)
+        section_certificate(api)
+        section_uptime(api)
+    except Exception as exc:  # pylint: disable=broad-except
+        if args.debug:
+            raise
+        sys.stderr.write("Unhandled error while querying %s: %s\n" % (args.host, exc))
+        return 1
+    finally:
+        api.logout()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
