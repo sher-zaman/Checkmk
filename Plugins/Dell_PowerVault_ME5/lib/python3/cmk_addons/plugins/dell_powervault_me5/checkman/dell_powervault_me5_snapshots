@@ -4,22 +4,32 @@ catalog: hw/storagehw/dell
 license: GPLv2
 distribution: Sher Zaman
 description:
- Monitors the snapshots of a Dell PowerVault ME5 system, grouped by the source
- volume they were taken from. Reports the snapshot count, the total snapshot
- data and the age of the newest snapshot.
+ Monitors snapshot protection for each source volume of a Dell PowerVault ME5
+ system. One service covers both the volume's snapshots and the schedule that
+ creates them, so a single service answers whether the volume is protected and
+ whether that protection is still running.
 
- Optional upper levels on the newest snapshot age detect a stalled snapshot
- schedule, alerting when no new snapshot has been taken within the configured
- time (for example 26 hours warning and 50 hours critical for a daily
- schedule). This is off by default because snapshot schedules vary.
+ Reported for the snapshots: the count, the total snapshot data and the age of
+ the newest snapshot, with each snapshot's status, creation time and data
+ footprint in the service details. Timestamps come from the array's snapshot
+ objects, which reflect the current point in time even where a retention task
+ has reset and reused an existing snapshot.
 
- The source volume is resolved from the snapshot parent, so discovery works on
- any array regardless of snapshot naming. State is taken from the snapshot
- health value reported by the array. Conditions are configurable via the "Dell
- PowerVault ME5 snapshots" ruleset.
+ Reported for the schedule: its status, the time of the last run, the next
+ scheduled run and any error the array reports. A next run time that has already
+ passed means the schedule is no longer firing; that maps to OK by default, so
+ arrays with abandoned or unbound schedules stay quiet. Set the overdue state to
+ Warning or Critical to alert when a schedule that should be running has
+ stalled, or use the snapshot age levels for the equivalent alert from the
+ snapshot side.
+
+ A volume that has a schedule but no snapshots is reported explicitly, so a
+ complete protection failure surfaces rather than disappearing.
+
+ Conditions are configurable via the "Dell PowerVault ME5 snapshots" ruleset.
 
 item:
  The source volume name.
 
 discovery:
- One service is created per source volume that has snapshots.
+ One service is created per volume that has snapshots or a snapshot schedule.

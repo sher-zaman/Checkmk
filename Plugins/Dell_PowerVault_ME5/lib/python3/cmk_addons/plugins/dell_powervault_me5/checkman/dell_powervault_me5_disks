@@ -6,8 +6,15 @@ distribution: Sher Zaman
 description:
  Monitors the physical disks of a Dell PowerVault ME5 system: disk health,
  error and drive-down conditions and SMART status. Temperature, remaining SSD
- life and power-on hours are reported where the disk provides them, with
- optional lower levels on remaining SSD life (off by default).
+ life and power-on hours are reported where the disk provides them.
+
+ Performance and reliability data come from the array's disk statistics:
+ throughput, IOPS and queue depth are graphed, and the predictive error
+ counters (SMART events, media errors, bad blocks, block reassignments, spin-up
+ retries, I/O timeouts and no-response events) are summed across both SAS ports
+ and raise when they increase between checks. Non-media errors are reported but
+ not alerted by default, because low non-zero values are normal. Lifetime data
+ read and written appear in the service details.
 
  State is taken from the disk health value reported by the array. Conditions
  are configurable via the "Dell PowerVault ME5 disk" ruleset.

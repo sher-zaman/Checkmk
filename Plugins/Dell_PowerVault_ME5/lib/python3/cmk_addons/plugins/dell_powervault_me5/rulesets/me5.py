@@ -12,11 +12,11 @@
 # Pool capacity and sensor temperature deliberately have no ruleset here: the
 # pool check registers against the built-in "filesystem" ruleset and the
 # temperature check against the built-in "temperature" ruleset, so the stock
-# Checkmk Filesystem and Temperature rules (levels, magic factor, trend) apply
-# to the array out of the box.
+# Checkmk Filesystem and Temperature rules apply to the array out of the box.
 #
 from cmk.rulesets.v1 import Help, Title
 from cmk.rulesets.v1.form_specs import (
+    BooleanChoice,
     DefaultValue,
     DictElement,
     Dictionary,
@@ -66,7 +66,45 @@ def _health_elements() -> dict[str, DictElement]:
     }
 
 
-# --------------------------------------------------------------------------- system
+def _throughput_element(title: Title) -> DictElement:
+    return DictElement(
+        required=False,
+        parameter_form=SimpleLevels(
+            title=title,
+            form_spec_template=Float(unit_symbol="B/s"),
+            level_direction=LevelDirection.UPPER,
+            prefill_fixed_levels=DefaultValue(value=(1e9, 1.15e9)),
+        ),
+    )
+
+
+def _iops_element(title: Title) -> DictElement:
+    return DictElement(
+        required=False,
+        parameter_form=SimpleLevels(
+            title=title,
+            form_spec_template=Integer(unit_symbol="IO/s"),
+            level_direction=LevelDirection.UPPER,
+            prefill_fixed_levels=DefaultValue(value=(50000, 100000)),
+        ),
+    )
+
+
+def _latency_element(title: Title) -> DictElement:
+    return DictElement(
+        required=False,
+        parameter_form=SimpleLevels(
+            title=title,
+            form_spec_template=TimeSpan(
+                displayed_magnitudes=[TimeMagnitude.MILLISECOND, TimeMagnitude.SECOND]
+            ),
+            level_direction=LevelDirection.UPPER,
+            prefill_fixed_levels=DefaultValue(value=(0.02, 0.05)),
+        ),
+    )
+
+
+# --------------------------------------------------------------------------- system health
 def _form_system() -> Dictionary:
     return Dictionary(
         title=Title("Dell PowerVault ME5 system health"),
@@ -164,12 +202,11 @@ def _form_host_ports() -> Dictionary:
         title=Title("Dell PowerVault ME5 host port"),
         help_text=Help(
             "Monitoring states for host port health and link status, and "
-            "optional upper levels on the port's I/O statistics (throughput, "
-            "IOPS, average response time and queue depth). A link status other "
-            "than Up is Critical by default; for ports that are intentionally "
-            "uncabled, add a rule scoped to those ports and set the link status "
-            "state to OK. The I/O levels are off by default; throughput and "
-            "IOPS are graphed for trending."
+            "optional upper levels on the port's I/O statistics. A link status "
+            "other than Up is Critical by default; for ports that are "
+            "intentionally uncabled, add a rule scoped to those ports and set "
+            "the link status state to OK. The I/O levels are off by default; "
+            "throughput and IOPS are graphed for trending regardless."
         ),
         elements={
             **_health_elements(),
@@ -180,35 +217,9 @@ def _form_host_ports() -> Dictionary:
                     prefill=DefaultValue(2),
                 ),
             ),
-            "levels_throughput": DictElement(
-                required=False,
-                parameter_form=SimpleLevels(
-                    title=Title("Upper levels on throughput"),
-                    form_spec_template=Float(unit_symbol="B/s"),
-                    level_direction=LevelDirection.UPPER,
-                    prefill_fixed_levels=DefaultValue(value=(1e9, 1.15e9)),
-                ),
-            ),
-            "levels_iops": DictElement(
-                required=False,
-                parameter_form=SimpleLevels(
-                    title=Title("Upper levels on IOPS"),
-                    form_spec_template=Integer(unit_symbol="IO/s"),
-                    level_direction=LevelDirection.UPPER,
-                    prefill_fixed_levels=DefaultValue(value=(50000, 100000)),
-                ),
-            ),
-            "levels_latency": DictElement(
-                required=False,
-                parameter_form=SimpleLevels(
-                    title=Title("Upper levels on average response time"),
-                    form_spec_template=TimeSpan(
-                        displayed_magnitudes=[TimeMagnitude.MILLISECOND, TimeMagnitude.SECOND]
-                    ),
-                    level_direction=LevelDirection.UPPER,
-                    prefill_fixed_levels=DefaultValue(value=(0.02, 0.05)),
-                ),
-            ),
+            "levels_throughput": _throughput_element(Title("Upper levels on throughput")),
+            "levels_iops": _iops_element(Title("Upper levels on IOPS")),
+            "levels_latency": _latency_element(Title("Upper levels on average response time")),
             "levels_queue": DictElement(
                 required=False,
                 parameter_form=SimpleLevels(
@@ -237,7 +248,7 @@ def _form_disk_groups() -> Dictionary:
         title=Title("Dell PowerVault ME5 disk group"),
         help_text=Help(
             "Monitoring states for disk group condition and background jobs. A "
-            "verify/scrub is normal maintenance and stays informational; a "
+            "verify or scrub is normal maintenance and stays informational; a "
             "reconstruct implies a failed member."
         ),
         elements={
@@ -281,7 +292,9 @@ def _form_volumes() -> Dictionary:
         title=Title("Dell PowerVault ME5 volume"),
         help_text=Help(
             "Monitoring states for volume health and path ownership, plus "
-            "optional levels on the thin-provisioned fill ratio (off by default)."
+            "optional levels on the thin-provisioned fill ratio, the volume's "
+            "I/O statistics and its cache hit ratios. All levels are off by "
+            "default; the values are graphed for trending regardless."
         ),
         elements={
             **_health_elements(),
@@ -299,6 +312,26 @@ def _form_volumes() -> Dictionary:
                     form_spec_template=Float(unit_symbol="%"),
                     level_direction=LevelDirection.UPPER,
                     prefill_fixed_levels=DefaultValue(value=(90.0, 95.0)),
+                ),
+            ),
+            "levels_throughput": _throughput_element(Title("Upper levels on throughput")),
+            "levels_iops": _iops_element(Title("Upper levels on IOPS")),
+            "levels_read_hit": DictElement(
+                required=False,
+                parameter_form=SimpleLevels(
+                    title=Title("Lower levels on read cache hit ratio"),
+                    form_spec_template=Float(unit_symbol="%"),
+                    level_direction=LevelDirection.LOWER,
+                    prefill_fixed_levels=DefaultValue(value=(30.0, 10.0)),
+                ),
+            ),
+            "levels_write_hit": DictElement(
+                required=False,
+                parameter_form=SimpleLevels(
+                    title=Title("Lower levels on write cache hit ratio"),
+                    form_spec_template=Float(unit_symbol="%"),
+                    level_direction=LevelDirection.LOWER,
+                    prefill_fixed_levels=DefaultValue(value=(30.0, 10.0)),
                 ),
             ),
         },
@@ -319,8 +352,13 @@ def _form_disks() -> Dictionary:
     return Dictionary(
         title=Title("Dell PowerVault ME5 disk"),
         help_text=Help(
-            "Monitoring states for disk health and error conditions, plus "
-            "optional lower levels on remaining SSD life (off by default)."
+            "Monitoring states for disk health and error conditions, the "
+            "predictive error counters, and optional levels on remaining SSD "
+            "life and I/O statistics. The predictive counters (SMART events, "
+            "media errors, bad blocks, block reassignments, spin-up retries, "
+            "I/O timeouts and no-response events) raise when they increase "
+            "between checks. Non-media errors are reported but not alerted by "
+            "default, because low non-zero values are normal."
         ),
         elements={
             **_health_elements(),
@@ -338,6 +376,20 @@ def _form_disks() -> Dictionary:
                     prefill=DefaultValue(0),
                 ),
             ),
+            "state_errors_increasing": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("State when a predictive error counter increases"),
+                    prefill=DefaultValue(1),
+                ),
+            ),
+            "monitor_nonmedia_errors": DictElement(
+                required=False,
+                parameter_form=BooleanChoice(
+                    title=Title("Also alert on increasing non-media errors"),
+                    prefill=DefaultValue(False),
+                ),
+            ),
             "levels_ssd_life": DictElement(
                 required=False,
                 parameter_form=SimpleLevels(
@@ -347,6 +399,8 @@ def _form_disks() -> Dictionary:
                     prefill_fixed_levels=DefaultValue(value=(10.0, 5.0)),
                 ),
             ),
+            "levels_throughput": _throughput_element(Title("Upper levels on throughput")),
+            "levels_iops": _iops_element(Title("Upper levels on IOPS")),
         },
     )
 
@@ -435,15 +489,15 @@ rule_spec_dell_me5_fans = CheckParameters(
 )
 
 
-# --------------------------------------------------------------------------- sensors (state only)
+# --------------------------------------------------------------------------- sensors
 def _form_sensor() -> Dictionary:
     return Dictionary(
         title=Title("Dell PowerVault ME5 sensor"),
         help_text=Help(
-            "Monitoring state for the non-temperature enclosure sensors, "
-            "grouped by type (voltage, current and the capacitor/supercap "
-            "pack). One service per type aggregates all sensors of that type "
-            "and raises if any single sensor reports a status other than OK."
+            "Monitoring state for the power-supply electrical sensors, grouped "
+            "by type (voltage and current). One service per type aggregates all "
+            "sensors of that type and raises if any single sensor reports a "
+            "status other than OK, naming the sensor concerned."
         ),
         elements={
             "state_not_ok": DictElement(
@@ -463,6 +517,49 @@ rule_spec_dell_me5_sensor = CheckParameters(
     topic=Topic.STORAGE,
     parameter_form=_form_sensor,
     condition=HostAndItemCondition(item_title=Title("Sensor type")),
+)
+
+
+# --------------------------------------------------------------------------- supercapacitor
+def _form_supercapacitor() -> Dictionary:
+    return Dictionary(
+        title=Title("Dell PowerVault ME5 supercapacitor"),
+        help_text=Help(
+            "Monitoring state for a controller's cache-protection "
+            "supercapacitor pack: charge level, capacitance, internal "
+            "resistance, pack voltage and the individual cell voltages. The "
+            "service raises if any of those sensors reports a status other than "
+            "OK. Optional lower levels on the charge level are available and "
+            "off by default, since the array reports a fault itself when the "
+            "pack cannot protect the cache."
+        ),
+        elements={
+            "state_not_ok": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("State when any supercapacitor sensor is not OK"),
+                    prefill=DefaultValue(1),
+                ),
+            ),
+            "levels_charge": DictElement(
+                required=False,
+                parameter_form=SimpleLevels(
+                    title=Title("Lower levels on charge level"),
+                    form_spec_template=Float(unit_symbol="%"),
+                    level_direction=LevelDirection.LOWER,
+                    prefill_fixed_levels=DefaultValue(value=(90.0, 75.0)),
+                ),
+            ),
+        },
+    )
+
+
+rule_spec_dell_me5_supercapacitor = CheckParameters(
+    name="dell_me5_supercapacitor",
+    title=Title("Dell PowerVault ME5 supercapacitor"),
+    topic=Topic.STORAGE,
+    parameter_form=_form_supercapacitor,
+    condition=HostAndItemCondition(item_title=Title("Controller")),
 )
 
 
@@ -499,18 +596,63 @@ rule_spec_dell_me5_unwritable_cache = CheckParameters(
 
 
 # --------------------------------------------------------------------------- snapshots
+def _schedule_elements() -> dict[str, DictElement]:
+    """Conditions for a snapshot schedule."""
+    return {
+        "state_not_ready": DictElement(
+            required=False,
+            parameter_form=ServiceState(
+                title=Title("State when the schedule status is not Ready"),
+                prefill=DefaultValue(1),
+            ),
+        ),
+        "state_error": DictElement(
+            required=False,
+            parameter_form=ServiceState(
+                title=Title("State when the schedule reports an error"),
+                prefill=DefaultValue(1),
+            ),
+        ),
+        "state_overdue": DictElement(
+            required=False,
+            parameter_form=ServiceState(
+                title=Title("State when the next scheduled run is overdue"),
+                prefill=DefaultValue(0),
+            ),
+        ),
+    }
+
+
 def _form_snapshots() -> Dictionary:
     return Dictionary(
         title=Title("Dell PowerVault ME5 snapshots"),
         help_text=Help(
-            "Monitoring states for snapshot health, plus optional upper levels "
-            "on the age of the newest snapshot per source volume. Enable the "
-            "age levels to alert when a snapshot schedule stalls (for example "
-            "26 hours warning and 50 hours critical for a daily schedule). Off "
-            "by default because schedules vary."
+            "One service per source volume covers both the volume's snapshots "
+            "and the schedule that creates them, so a single service shows "
+            "whether the volume is protected and whether protection is still "
+            "running.\n\n"
+            "The overdue state is OK by default, so arrays with abandoned or "
+            "unbound schedules stay quiet; set it to Warning or Critical to "
+            "alert when a schedule that should be running has stalled. The "
+            "snapshot age levels are off by default and provide the same "
+            "protection from the snapshot side (for example 26 hours warning "
+            "and 50 hours critical for a daily schedule)."
         ),
         elements={
-            **_health_elements(),
+            "state_not_available": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("State when a snapshot is not available"),
+                    prefill=DefaultValue(1),
+                ),
+            ),
+            "state_no_snapshots": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("State when a schedule exists but there are no snapshots"),
+                    prefill=DefaultValue(1),
+                ),
+            ),
             "levels_age": DictElement(
                 required=False,
                 parameter_form=SimpleLevels(
@@ -526,6 +668,7 @@ def _form_snapshots() -> Dictionary:
                     prefill_fixed_levels=DefaultValue(value=(93600.0, 180000.0)),
                 ),
             ),
+            **_schedule_elements(),
         },
     )
 
@@ -536,6 +679,30 @@ rule_spec_dell_me5_snapshots = CheckParameters(
     topic=Topic.STORAGE,
     parameter_form=_form_snapshots,
     condition=HostAndItemCondition(item_title=Title("Source volume")),
+)
+
+
+# --------------------------------------------------------------------------- snapshot schedules
+def _form_schedules() -> Dictionary:
+    return Dictionary(
+        title=Title("Dell PowerVault ME5 schedule"),
+        help_text=Help(
+            "Monitoring states for a schedule that is not tied to a specific "
+            "volume. Schedules that create snapshots for a volume are reported "
+            "by that volume's snapshots service instead. The overdue state is "
+            "OK by default; set it to Warning or Critical to alert when a "
+            "schedule that should be running has stalled."
+        ),
+        elements={**_schedule_elements()},
+    )
+
+
+rule_spec_dell_me5_schedules = CheckParameters(
+    name="dell_me5_schedules",
+    title=Title("Dell PowerVault ME5 schedule"),
+    topic=Topic.STORAGE,
+    parameter_form=_form_schedules,
+    condition=HostAndItemCondition(item_title=Title("Schedule")),
 )
 
 
@@ -573,4 +740,110 @@ rule_spec_dell_me5_hosts = CheckParameters(
     topic=Topic.STORAGE,
     parameter_form=_form_hosts,
     condition=HostAndItemCondition(item_title=Title("Host")),
+)
+
+
+# --------------------------------------------------------------------------- system performance
+def _form_system_performance() -> Dictionary:
+    return Dictionary(
+        title=Title("Dell PowerVault ME5 system performance"),
+        help_text=Help(
+            "Optional upper levels on array-wide IOPS, throughput and average "
+            "response time. All are off by default; the values, including the "
+            "read and write split, are graphed for performance and capacity "
+            "trending."
+        ),
+        elements={
+            "levels_iops": _iops_element(Title("Upper levels on system IOPS")),
+            "levels_throughput": _throughput_element(Title("Upper levels on system throughput")),
+            "levels_latency": _latency_element(
+                Title("Upper levels on system average response time")
+            ),
+        },
+    )
+
+
+rule_spec_dell_me5_system_performance = CheckParameters(
+    name="dell_me5_system_performance",
+    title=Title("Dell PowerVault ME5 system performance"),
+    topic=Topic.STORAGE,
+    parameter_form=_form_system_performance,
+    condition=HostCondition(),
+)
+
+
+# --------------------------------------------------------------------------- health alerts
+def _form_alerts() -> Dictionary:
+    return Dictionary(
+        title=Title("Dell PowerVault ME5 health alerts"),
+        help_text=Help(
+            "Monitoring states for the array's unresolved health alerts. "
+            "Informational alerts are ignored; only unresolved critical and "
+            "warning alerts are reported, with the affected component, the "
+            "reason and the array's recommended action in the service details."
+        ),
+        elements={
+            "state_critical": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("State when unresolved critical alerts exist"),
+                    prefill=DefaultValue(2),
+                ),
+            ),
+            "state_warning": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("State when unresolved warning alerts exist"),
+                    prefill=DefaultValue(1),
+                ),
+            ),
+        },
+    )
+
+
+rule_spec_dell_me5_alerts = CheckParameters(
+    name="dell_me5_alerts",
+    title=Title("Dell PowerVault ME5 health alerts"),
+    topic=Topic.STORAGE,
+    parameter_form=_form_alerts,
+    condition=HostCondition(),
+)
+
+
+# --------------------------------------------------------------------------- enclosures
+def _form_enclosures() -> Dictionary:
+    return Dictionary(
+        title=Title("Dell PowerVault ME5 enclosure"),
+        help_text=Help(
+            "Monitoring states for enclosure health and status, plus optional "
+            "upper levels on enclosure power draw. Power is graphed regardless."
+        ),
+        elements={
+            **_health_elements(),
+            "state_not_ok": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("State when the enclosure status is not OK"),
+                    prefill=DefaultValue(2),
+                ),
+            ),
+            "levels_power": DictElement(
+                required=False,
+                parameter_form=SimpleLevels(
+                    title=Title("Upper levels on enclosure power draw"),
+                    form_spec_template=Float(unit_symbol="W"),
+                    level_direction=LevelDirection.UPPER,
+                    prefill_fixed_levels=DefaultValue(value=(500.0, 600.0)),
+                ),
+            ),
+        },
+    )
+
+
+rule_spec_dell_me5_enclosures = CheckParameters(
+    name="dell_me5_enclosures",
+    title=Title("Dell PowerVault ME5 enclosure"),
+    topic=Topic.STORAGE,
+    parameter_form=_form_enclosures,
+    condition=HostAndItemCondition(item_title=Title("Enclosure")),
 )

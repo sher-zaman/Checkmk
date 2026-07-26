@@ -1,0 +1,25 @@
+title: Dell PowerVault ME5: Schedules
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors schedules on a Dell PowerVault ME5 system that are not tied to a
+ specific volume, for example a replication schedule. Reports the schedule
+ status, the time of the last run, the next scheduled run and any error the
+ array reports.
+
+ Schedules that create snapshots for a volume are not shown here; they are
+ reported by that volume's service in the "Dell PowerVault ME5: Snapshots"
+ check, so snapshot protection is visible in one place.
+
+ A next run time that has already passed maps to OK by default; set the overdue
+ state to Warning or Critical to alert on a stalled schedule. Conditions are
+ configurable via the "Dell PowerVault ME5 schedule" ruleset.
+
+item:
+ The schedule name as reported by the array.
+
+discovery:
+ One service is created per schedule that does not map to a volume. Arrays
+ without such schedules get no services.

@@ -1,0 +1,21 @@
+title: Dell PowerVault ME5: System Performance
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Reports array-wide performance for a Dell PowerVault ME5 system: total IOPS and
+ throughput summed across both controllers, the read and write split derived
+ from the cumulative counters, and the average response time.
+
+ Response time is taken from the host port statistics, since that is where the
+ array reports service times, and is weighted by each port's IOPS so that idle
+ standby paths do not distort the figure. Controller CPU load and write cache
+ utilisation are also reported.
+
+ IOPS, throughput and response time are graphed with their read and write
+ components. Optional upper levels on each are available via the "Dell
+ PowerVault ME5 system performance" ruleset and are off by default.
+
+discovery:
+ One service is created per array.

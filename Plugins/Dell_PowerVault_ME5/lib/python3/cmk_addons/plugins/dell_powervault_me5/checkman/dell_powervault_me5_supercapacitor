@@ -1,0 +1,24 @@
+title: Dell PowerVault ME5: Supercapacitor
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors the cache-protection supercapacitor pack of each Dell PowerVault ME5
+ controller. One service is created per controller and covers that pack's charge
+ level, capacitance, internal resistance, pack voltage and individual cell
+ voltages.
+
+ The supercapacitor holds cached write data during a power loss, so its
+ condition matters for data integrity. Capacitance and internal resistance are
+ graphed as wear indicators, and the service raises if any of the pack's sensors
+ reports a status other than OK, naming the sensor concerned.
+
+ Conditions are configurable via the "Dell PowerVault ME5 supercapacitor"
+ ruleset.
+
+item:
+ The controller the pack belongs to (for example {"Controller A"}).
+
+discovery:
+ One service is created per controller that reports supercapacitor sensors.

@@ -45,12 +45,30 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("disks", "show/disks", "drives"),
     ("power_supplies", "show/power-supplies", "power-supplies"),
     ("sensors", "show/sensor-status", "sensors"),
-    ("host_port_statistics", "show/host-port-statistics", "host-port-statistics"),
     ("unwritable_cache", "show/unwritable-cache", "unwritable-cache"),
-    ("versions", "show/versions", "versions"),
-    ("host_groups", "show/host-groups", "host-groups"),
+    ("snapshots", "show/snapshots", "snapshots"),
     ("initiators", "show/initiators", "initiator"),
+    ("alerts", "show/alerts", "alerts"),
+    ("enclosures", "show/enclosures", "enclosures"),
+    ("schedules", "show/schedules", "schedules"),
+    ("host_port_statistics", "show/host-port-statistics", "host-port-statistics"),
+    ("volume_statistics", "show/volume-statistics", "volume-statistics"),
+    ("disk_statistics", "show/disk-statistics", "disk-statistics"),
+    ("controller_statistics", "show/controller-statistics", "controller-statistics"),
 ]
+
+# Sections that are not emitted on their own: the agent joins them onto the
+# object they belong to, so each check reads a single section.
+JOIN_ONLY = {
+    "snapshots",
+    "schedules",
+    "host_port_statistics",
+    "volume_statistics",
+    "disk_statistics",
+    "controller_statistics",
+    "volumes",
+    "disks",
+}
 
 SECTION_PREFIX = "dell_powervault_me5"
 
@@ -172,6 +190,127 @@ def _logout(session: requests.Session, args: argparse.Namespace, session_key: st
         pass
 
 
+def _emit(suffix: str, data: Any) -> None:
+    print(f"<<<{SECTION_PREFIX}_{suffix}:sep(0)>>>")
+    print(json.dumps(data, separators=(",", ":")))
+
+
+def _index_by(rows: Any, key: str, strip_prefix: str | None = None) -> dict[str, Any]:
+    """Index a list of API objects by one of their fields."""
+    result: dict[str, Any] = {}
+    if not isinstance(rows, list):
+        return result
+    for row in rows:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = str(value)
+        if strip_prefix and text.startswith(strip_prefix):
+            text = text[len(strip_prefix):]
+        result[text] = row
+    return result
+
+
+def _emit_joined(collected: dict[str, Any]) -> None:
+    """Emit the sections that combine two API commands.
+
+    Joining in the agent keeps every check on a single section, which makes
+    discovery simple and avoids depending on multi-section resolution.
+    """
+    # ---- host ports: controller port objects + per-port statistics ----
+    controllers = collected.get("controllers")
+    port_stats = _index_by(collected.get("host_port_statistics"), "durable-id", "hostport_")
+    if isinstance(controllers, list):
+        ports_out = []
+        for ctrl in controllers:
+            for port in ctrl.get("port", []) or []:
+                pid = port.get("port")
+                if not pid:
+                    continue
+                enriched = dict(port)
+                enriched["statistics"] = port_stats.get(str(pid), {})
+                ports_out.append(enriched)
+        if ports_out:
+            _emit("host_ports", ports_out)
+
+    # ---- volumes: volume objects + per-volume statistics ----
+    volumes = collected.get("volumes")
+    volume_stats = _index_by(collected.get("volume_statistics"), "volume-name")
+    if isinstance(volumes, list):
+        volumes_out = []
+        for vol in volumes:
+            enriched = dict(vol)
+            enriched["statistics"] = volume_stats.get(str(vol.get("volume-name", "")), {})
+            volumes_out.append(enriched)
+        if volumes_out:
+            _emit("volumes", volumes_out)
+
+    # ---- disks: disk objects + per-disk statistics ----
+    disks = collected.get("disks")
+    disk_stats = _index_by(collected.get("disk_statistics"), "durable-id")
+    if isinstance(disks, list):
+        disks_out = []
+        for disk in disks:
+            enriched = dict(disk)
+            enriched["statistics"] = disk_stats.get(str(disk.get("durable-id", "")), {})
+            disks_out.append(enriched)
+        if disks_out:
+            _emit("disks", disks_out)
+
+    # ---- snapshots + schedules, grouped per source volume ----
+    # A schedule's retention task names the volume it protects, so the two
+    # commands are joined into one view of each volume's snapshot protection.
+    snapshots = collected.get("snapshots")
+    schedules = collected.get("schedules")
+    if isinstance(snapshots, list) or isinstance(schedules, list):
+        per_volume: dict[str, dict[str, Any]] = {}
+
+        for snap in snapshots or []:
+            parent = (
+                snap.get("volume-parent")
+                or snap.get("master-volume-name")
+                or snap.get("base-volume")
+            )
+            if not parent:
+                continue
+            entry = per_volume.setdefault(str(parent), {"snapshots": [], "schedules": []})
+            entry["snapshots"].append(snap)
+
+        orphans: dict[str, Any] = {}
+        for schedule in schedules or []:
+            volumes_covered = set()
+            for task in schedule.get("tasks", []) or []:
+                for retention in task.get("snapshot-with-retention-tasks", []) or []:
+                    master = retention.get("master-volume-name")
+                    if master:
+                        volumes_covered.add(str(master))
+            if volumes_covered:
+                for master in volumes_covered:
+                    entry = per_volume.setdefault(master, {"snapshots": [], "schedules": []})
+                    entry["schedules"].append(schedule)
+            else:
+                # A schedule that does not map to a volume (for example a
+                # replication schedule) keeps its own service.
+                name = schedule.get("name")
+                if name:
+                    orphans[str(name)] = schedule
+
+        if per_volume or orphans:
+            _emit("snapshots", {"volumes": per_volume, "orphan_schedules": orphans})
+
+    # ---- system performance: controller statistics + port response times ----
+    ctrl_stats = collected.get("controller_statistics")
+    all_port_stats = collected.get("host_port_statistics")
+    if isinstance(ctrl_stats, list) or isinstance(all_port_stats, list):
+        _emit(
+            "system_performance",
+            {
+                "controllers": ctrl_stats if isinstance(ctrl_stats, list) else [],
+                "ports": all_port_stats if isinstance(all_port_stats, list) else [],
+            },
+        )
+
+
 def main() -> int:
     args = _parse_args()
 
@@ -209,40 +348,12 @@ def main() -> int:
                 continue
 
             collected[suffix] = data
-
-            # host-port statistics are not emitted on their own; they are
-            # merged into the host_ports section below.
-            if suffix == "host_port_statistics":
+            if suffix in JOIN_ONLY:
                 continue
 
-            print(f"<<<{SECTION_PREFIX}_{suffix}:sep(0)>>>")
-            print(json.dumps(data, separators=(",", ":")))
+            _emit(suffix, data)
 
-        # Combined host ports section: each port from show controllers, enriched
-        # with its I/O statistics. Emitting one joined section keeps the check
-        # simple and reliable (single section, one service per port).
-        controllers = collected.get("controllers")
-        if isinstance(controllers, list):
-            stats_by_port: dict[str, Any] = {}
-            for stat in collected.get("host_port_statistics") or []:
-                did = str(stat.get("durable-id", ""))
-                pid = did[len("hostport_"):] if did.startswith("hostport_") else did
-                if pid:
-                    stats_by_port[pid] = stat
-
-            ports_out = []
-            for ctrl in controllers:
-                for port in ctrl.get("port", []) or []:
-                    pid = port.get("port")
-                    if not pid:
-                        continue
-                    enriched = dict(port)
-                    enriched["statistics"] = stats_by_port.get(str(pid), {})
-                    ports_out.append(enriched)
-
-            if ports_out:
-                print(f"<<<{SECTION_PREFIX}_host_ports:sep(0)>>>")
-                print(json.dumps(ports_out, separators=(",", ":")))
+        _emit_joined(collected)
     finally:
         _logout(session, args, session_key)
 

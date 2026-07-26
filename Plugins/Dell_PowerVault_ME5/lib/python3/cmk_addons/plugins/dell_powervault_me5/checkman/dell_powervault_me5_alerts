@@ -1,0 +1,19 @@
+title: Dell PowerVault ME5: Health Alerts
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Reports the unresolved health alerts of a Dell PowerVault ME5 system. Only
+ alerts the array classifies as critical or warning are considered;
+ informational alerts are ignored.
+
+ The affected component, the array's description and reason, and its
+ recommended action are shown in the service details for each alert, so the
+ required remediation is visible without logging in to the array.
+
+ The states for unresolved critical and warning alerts are configurable via the
+ "Dell PowerVault ME5 health alerts" ruleset.
+
+discovery:
+ One service is created per array.

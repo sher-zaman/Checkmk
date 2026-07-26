@@ -5,9 +5,13 @@ license: GPLv2
 distribution: Sher Zaman
 description:
  Monitors the base volumes of a Dell PowerVault ME5 system: volume health,
- whether the current owning controller matches the preferred owner, and the
- allocated size. Optional upper levels on the thin-provisioned fill ratio are
- available and off by default.
+ whether the current owning controller matches the preferred owner, the
+ allocated size and the thin-provisioned fill ratio.
+
+ Performance is reported from the array's volume statistics: throughput, IOPS,
+ the read and write split derived from the cumulative counters, and the current
+ read and write cache hit ratios. All values are graphed for trending, and
+ optional levels are available.
 
  Snapshots are volumes on the ME5 but are not shown here; they are covered by
  the "Dell PowerVault ME5: Snapshots" check.

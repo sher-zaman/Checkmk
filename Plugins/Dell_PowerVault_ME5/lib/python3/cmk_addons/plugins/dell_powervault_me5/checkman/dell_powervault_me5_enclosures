@@ -1,0 +1,23 @@
+title: Dell PowerVault ME5: Enclosures
+agents: dell_powervault_me5
+catalog: hw/storagehw/dell
+license: GPLv2
+distribution: Sher Zaman
+description:
+ Monitors each enclosure of a Dell PowerVault ME5 system: enclosure health and
+ status, and power draw. The model, vendor, midplane type, disk and slot counts,
+ power supply and cooling element counts and the enclosure WWN are shown in the
+ service details.
+
+ Power draw is graphed, and optional upper levels on it are available. State is
+ taken from the enclosure health value reported by the array, and the array's
+ health reason and recommended action appear in the details when health is not
+ OK. Conditions are configurable via the "Dell PowerVault ME5 enclosure"
+ ruleset.
+
+item:
+ The enclosure id (for example {"0"}).
+
+discovery:
+ One service is created per enclosure, so arrays with expansion enclosures get
+ one service each.

@@ -9,9 +9,8 @@ description:
  status of each controller and the status of the partner management controller.
 
  State is taken from the system health value reported by the array. The mapping
- of the degraded, fault, unknown, not-redundant, controller-down and partner
- management controller conditions is configurable via the "Dell PowerVault ME5
- system health" ruleset.
+ of each condition is configurable via the "Dell PowerVault ME5 system health"
+ ruleset.
 
 discovery:
  One service is created per array.
