@@ -12,6 +12,9 @@ description:
  Optics carry no entity names on most models and the FortiSwitch MIB
  provides no switchport mapping, so optics are grouped by their
  characteristic five-sensor pattern and named positionally per unit.
+ Because naming is positional, removing an optic can shift the numbering
+ of the remaining optics on that unit, so re-run service discovery after
+ changing transceivers.
 
  All levels are active by default with lenient values suitable for
  common 1G/10G optics and are configurable via the "FortiSwitch SFP
@@ -20,7 +23,8 @@ description:
  ruleset.
 
 item:
- Positional optic name, e.g. "SFP 1".
+ The positional optic number, e.g. "1", giving service names such as
+ "SFP 1".
 
 discovery:
  One service is created per optic reporting live (nonzero) DOM values.

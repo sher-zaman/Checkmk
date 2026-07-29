@@ -15,7 +15,9 @@ description:
  downgrade a known-unplugged second PSU to WARN.
 
 item:
- The PSU name from the ENTITY-MIB (e.g. PSU1, PSU2).
+ The power supply number, e.g. "1", giving service names such as
+ "PSU 1". Taken from the ENTITY-MIB name with the redundant "PSU"
+ prefix removed.
 
 discovery:
  One service is created per discovered power supply sensor.

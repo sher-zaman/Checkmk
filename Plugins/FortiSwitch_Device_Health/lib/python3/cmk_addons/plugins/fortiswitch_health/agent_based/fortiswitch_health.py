@@ -6,7 +6,11 @@
 ###############################################################################
 # fortiswitch_health - Device health monitoring for Fortinet FortiSwitch
 ###############################################################################
-# Author: Sher Zaman (sher_zaman@outlook.com), FirmaTrust
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
 ###############################################################################
 #
 # Monitors CPU utilization, memory usage, chassis temperature, PSU state
@@ -43,7 +47,6 @@ from typing import Any, Mapping
 
 from cmk.agent_based.v2 import (
     CheckPlugin,
-    Metric,
     OIDEnd,
     Result,
     Service,
@@ -192,17 +195,33 @@ check_plugin_fortiswitch_memory = CheckPlugin(
 
 @dataclass(frozen=True)
 class FSwitchSensor:
-    kind: str  # "temp" | "psu" | "fan"
+    kind: str  # "temp" | "psu" | "fan" (DOM rows are grouped separately)
     name: str
     value: float | None
     oper_status: int | None  # 1=ok, 2=unavailable, 3=nonoperational
+
+
+def _strip_family_prefix(name: str, prefix: str) -> str:
+    """Drop a leading family word so items do not duplicate the service name.
+
+    Devices label these sensors "PSU1", "Fan1" and so on, which would render
+    as "PSU PSU1" and "Fan Fan1" once the service name template is applied.
+    Stripping the prefix yields "PSU 1" and "Fan 1" instead. Names that do
+    not start with the family word are left untouched.
+    """
+    if name.lower().startswith(prefix.lower()):
+        stripped = name[len(prefix):].strip(" _-")
+        if stripped:
+            return stripped
+    return name
 
 
 def _classify(units_display: str) -> str | None:
     """Classify a sensor row by its entPhySensorUnitsDisplay string.
 
     Chassis temperature reports 'Celsius' while SFP/DOM temperature
-    reports plain 'C', which is what keeps optics out of scope here.
+    reports plain 'C', which is what separates chassis sensors from
+    optical transceiver sensors.
     """
     units = units_display.strip()
     lowered = units.lower()
@@ -212,14 +231,14 @@ def _classify(units_display: str) -> str | None:
         return "psu"
     if lowered.startswith("percent"):
         return "fan"
-    if lowered == "c" or lowered.startswith("volts") or lowered.startswith("dbm") or lowered.startswith("mamps"):
+    if lowered == "c" or lowered.startswith(("volts", "dbm", "mamps")):
         return "dom"
     return None
 
 
 def parse_fortiswitch_sensors(
     string_table: list[StringTable],
-) -> Mapping[str, Mapping[str, FSwitchSensor]] | None:
+) -> Mapping[str, Mapping[str, Any]] | None:
     if len(string_table) < 2:
         return None
     entity_rows, sensor_rows = string_table[0], string_table[1]
@@ -264,6 +283,8 @@ def parse_fortiswitch_sensors(
             continue
 
         name = names.get(idx) or f"{fallback_labels[kind]} {idx}"
+        if kind in ("psu", "fan"):
+            name = _strip_family_prefix(name, fallback_labels[kind])
         # Guarantee uniqueness of service items even on odd firmware
         if name in section[kind]:
             name = f"{name} ({idx})"
@@ -293,7 +314,7 @@ def parse_fortiswitch_sensors(
                 for field, row in zip(fields, window)
             }
             live = any(v not in (None, 0.0) for v in values.values())
-            section["sfp"][f"SFP {optic_no}"] = {"values": values, "live": live}
+            section["sfp"][str(optic_no)] = {"values": values, "live": live}
             i += len(pattern)
         else:
             i += 1

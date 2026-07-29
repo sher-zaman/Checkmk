@@ -15,8 +15,9 @@ description:
  configurable via the "FortiSwitch fan" ruleset.
 
 item:
- The fan name from the ENTITY-MIB, or "Fan <index>" if the device does
- not label the sensor (e.g. FS-148F).
+ The fan number, e.g. "1", giving service names such as "Fan 1".
+ Taken from the ENTITY-MIB name with the redundant "Fan" prefix
+ removed, or the sensor index if the device does not label the sensor.
 
 discovery:
  One service is created per fan sensor that reports a live (nonzero)

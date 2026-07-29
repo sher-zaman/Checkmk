@@ -6,7 +6,11 @@
 ###############################################################################
 # fortiswitch_health - Ruleset definitions
 ###############################################################################
-# Author: Sher Zaman (sher_zaman@outlook.com), FirmaTrust
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
 ###############################################################################
 #
 # Temperature deliberately has no ruleset here: the temperature check
