@@ -1,11 +1,11 @@
 title: Windows DHCP Server: Failover Relationships
 agents: windows
 catalog: os/windows
-license: GPLv2
-distribution: check_mk
+license: GPL-2.0-only
 description:
- This check monitors the state of DHCPv4 failover relationships on
- Windows DHCP servers. It requires the agent plugin {dhcp_failover.ps1}
+ This Checkmk extension monitors the state of DHCPv4 failover
+ relationships on Windows DHCP servers. It requires the agent plugin
+ {dhcp_failover.ps1}
  to be installed on the monitored host, either manually or via the
  Agent Bakery rule "DHCP failover monitoring (Windows)".
 

@@ -1,7 +1,12 @@
 # Checkmk agent plugin: DHCP failover relationship monitoring (Windows)
 #
-# Author: Sher Zaman (FirmaTrust)
-# License: GPLv2
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
+# License:  GPL-2.0-only
 #
 # Emits one line per DHCPv4 failover relationship configured on this server.
 # All state evaluation is done server-side by the dhcp_failover check plugin.

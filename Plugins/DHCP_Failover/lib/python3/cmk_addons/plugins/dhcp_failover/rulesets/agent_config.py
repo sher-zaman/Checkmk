@@ -3,8 +3,13 @@
 #
 # Checkmk ruleset: DHCP failover monitoring agent plugin deployment (Bakery)
 #
-# Author: Sher Zaman (FirmaTrust)
-# License: GPLv2
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
+# License:  GPL-2.0-only
 #
 # On Checkmk Raw edition this rule exists but has no effect, since the
 # Agent Bakery is only available in the commercial editions.

@@ -3,8 +3,13 @@
 #
 # Checkmk graphing: Windows DHCP failover relationships
 #
-# Author: Sher Zaman (FirmaTrust)
-# License: GPLv2
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
+# License:  GPL-2.0-only
 
 from cmk.graphing.v1 import Title
 from cmk.graphing.v1.metrics import Color, DecimalNotation, Metric, Unit

@@ -3,8 +3,13 @@
 #
 # Checkmk check plugin: Windows DHCP failover relationships
 #
-# Author: Sher Zaman (FirmaTrust)
-# License: GPLv2
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
+# License:  GPL-2.0-only
 #
 # Consumes the <<<dhcp_failover>>> section produced by the Windows agent
 # plugin dhcp_failover.ps1 and creates one service per failover relationship.
