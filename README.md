@@ -1,37 +1,56 @@
-# Checkmk
+# Checkmk Extensions
 
-A personal collection of Checkmk monitoring plugins and scripts, built and maintained by Sher Zaman.
+Checkmk monitoring extensions and scripts, built and maintained by Sher Zaman.
 
-## Structure
+Each extension is packaged as an MKP and ships with its unpacked source, so the code can be reviewed directly here before installing. All extensions target Checkmk 2.3 and later.
+
+## Extensions
+
+| Extension | What it monitors | Type | Version |
+|---|---|---|---|
+| [Synology_SMART](Plugins/Synology_SMART) | Per-disk SMART attributes on Synology NAS units | SNMP | 1.0.1 |
+| [FortiSwitch_Device_Health](Plugins/FortiSwitch_Device_Health) | CPU, memory, temperature, PSU, fan and SFP optics on Fortinet FortiSwitch | SNMP | 1.2.0 |
+| [Dell_PowerVault_ME5](Plugins/Dell_PowerVault_ME5) | Dell PowerVault ME5 arrays: controllers, pools, volumes, disks, sensors, host port I/O | Special agent | 1.2.0 |
+| [VCSA_Health](Plugins/VCSA_Health) | VMware vCenter Server Appliance services, health areas, filesystems, backup and certificate | Special agent | 1.0.0 |
+| [DHCP_Failover](Plugins/DHCP_Failover) | Windows DHCP failover relationship state | Agent, bakery | 1.0.1 |
+| [System_Reboot_Required](Plugins/System_Reboot_Required) | Pending reboot detection across major Linux distributions | Agent, bakery | 1.1.0 |
+| [DFS_State](Plugins/DFS_State) | DFS Replication state per replicated folder | Agent, bakery | 2.1.1 |
+| [DFS_Backlog](Plugins/DFS_Backlog) | DFS Replication backlog per folder, partner and direction | Agent, bakery | 1.5.1 |
+
+Every extension folder contains its own README covering what it monitors, requirements, installation and configuration.
+
+## Installation
+
+Download the `.mkp` from the extension's folder, then either upload it under **Setup > Extension Packages** in Checkmk, or install it from the command line as the site user:
 
 ```
-Checkmk/
-├── Plugins/     Checkmk extensions and agent plugins
-└── Scripts/     Checkmk local checks (PowerShell, deployed to the agent's local/ directory)
-    └── Docs/    One README per script, matching the names in Scripts/
+mkp add <package>.mkp
+mkp enable <package>
 ```
 
-### Plugins/
+Extensions marked "Agent, bakery" also need their agent plugin deployed to the monitored host, either manually or through the Agent Bakery. See the individual README for details.
 
-Each subfolder is a self-contained Checkmk extension or agent plugin. Extensions packaged as MKPs include the packaged `.mkp` file(s) plus the unpacked source under `lib/python3/cmk_addons/plugins/<name>/` (and, where applicable, `agents/` and bakery trees), so the code can be browsed directly on GitHub. Each plugin folder has its own README with details on what it monitors and how to install it.
+## Repository layout
 
-Current plugins:
+```
+Plugins/<Extension>/
+├── <package>-<version>.mkp      all published versions, kept
+├── README.md
+├── lib/                          check plugin, rulesets, graphing, checkman, bakery
+└── agents/                       agent plugin, where applicable
+```
 
-- **Synology_SMART**: per-disk SMART attribute monitoring for Synology NAS units over SNMP
-- **FortiSwitch_Device_Health**: CPU, memory, temperature, PSU, fan, and SFP optical monitoring for Fortinet FortiSwitch devices over SNMP
-- **DHCP_Failover**: Windows DHCP failover relationship monitoring, agent-based with Agent Bakery support
-- **System_Reboot_Required**: pending reboot detection for Linux hosts across major distributions. Maintenance fork of Luca-Leon Hausdoerfer's plugin, GPLv3
-- **VCSA_Health**: VMware vCenter Server Appliance health monitoring via REST API, special agent, no Checkmk agent required
-- **Dell_PowerVault_ME5**: hardware health monitoring for Dell EMC PowerVault ME5 storage arrays via Redfish, covering sensors, disks, snapshots, and connected hosts
+The unpacked source mirrors the latest version. Earlier `.mkp` files are retained so any published version can be downloaded.
 
-### Scripts/
+`Scripts/` holds standalone PowerShell local checks that predate the packaged extensions, with their documentation under `Scripts/Docs/`. These are being phased out in favour of MKPs.
 
-Standalone PowerShell local checks, deployed to the Checkmk agent's `local/` directory. These run independently and produce their own check output. This folder is being phased out in favor of packaged extensions under `Plugins/`.
+## Licensing
 
-`Scripts/Docs/` holds one README per script, matching the names above.
+Original extensions are GPL-2.0-only. See [LICENSE.md](LICENSE.md).
 
-## License
+Extensions forked from other authors' work retain the upstream licence and attribution, documented in their own README and, where the licence differs, in a `LICENSE.md` inside the extension folder.
 
-GPL v2 for original FirmaTrust extensions. See [LICENSE.md](LICENSE.md).
+## Author
 
-Forked plugins carry their own license and attribution in their individual folders (see each plugin's README).
+Sher Zaman
+[sherz.dev](https://sherz.dev) · [LinkedIn](https://www.linkedin.com/in/sher-zaman-95b008114/)
