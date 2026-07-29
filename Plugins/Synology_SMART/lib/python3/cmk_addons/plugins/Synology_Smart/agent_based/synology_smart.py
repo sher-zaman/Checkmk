@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# License: GNU General Public License v2
+# License: GPL-2.0-only
 #
 ###############################################################################
 # synology_smart - Per-disk SMART attribute monitoring for Synology NAS
 ###############################################################################
-# Author: Sher Zaman (sher_zaman@outlook.com), FirmaTrust
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
 ###############################################################################
 #
 # Monitors SMART attributes exposed by Synology DSM via SNMP
@@ -26,10 +30,11 @@
 # - Temperature intentionally not covered (handled by the built-in
 #   Synology disk check).
 #
-# Validated against DSM 6.2 and DSM 7.0 on DS418, DS916+, DS918+,
-# DS1517+ (incl. DX517 expansion) and RS4021xs+.
+# Validated on DSM 6.2, 7.0 and 7.1 or later across DS, RS and FS
+# series units, including DX-series expansion enclosures.
 #
-# 2026-07-15: v1.0.0 initial release
+# 2026-07-28: 1.0.1 author metadata update
+# 2026-07-15: 1.0.0 initial release
 ###############################################################################
 
 from cmk.agent_based.v2 import (

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# License: GNU General Public License v2
+# License: GPL-2.0-only
 #
 ###############################################################################
 # synology_smart - ruleset (optional threshold overrides)
 ###############################################################################
-# Author: Sher Zaman (sher_zaman@outlook.com), FirmaTrust
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
 ###############################################################################
 #
 # The plugin is fully functional without any rule. This ruleset only
