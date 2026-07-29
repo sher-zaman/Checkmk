@@ -6,8 +6,6 @@ Checkmk extension for monitoring the operational state of DFS Replication (DFSR)
 
 This is a fixed build of an existing extension.
 
-Sher Zaman, sher[at]sherz[dot]dev, [sherz.dev](https://sherz.dev), [LinkedIn](https://www.linkedin.com/in/sher-zaman-95b008114/)
-
 Original check: Allan GooD, allan.cassaro@gmail.com
 Original MKP packaging: Roger Ellenberger, roger.ellenberger@wagner.ch (WagnerAG)
 Upstream source: [github.com/WagnerAG/checkmk_dfs_state](https://github.com/WagnerAG/checkmk_dfs_state)
