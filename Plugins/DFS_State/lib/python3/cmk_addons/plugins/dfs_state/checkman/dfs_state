@@ -1,0 +1,26 @@
+title: DFS Replication: State of Replicated Folders
+agents: windows
+catalog: os/storage
+license: GPLv2
+distribution:
+description:
+ This check monitors the operational state of each DFS Replication (DFSR)
+ replicated folder on a Windows server, as reported by the
+ {DfsrReplicatedFolderInfo} class of the {root\MicrosoftDFS} WMI provider.
+
+ The reported state is mapped to a Checkmk state as follows:
+ state {4} (Normal Operation) is {OK}; states {1} (Initializing),
+ {2} (Initial Synchronization) and {3} (Auto Recovery) are {WARN};
+ state {5} (Error) is {CRIT}; and state {0} (Not Initialized) is {UNKNOWN}.
+
+ The agent plugin ({dfs_state.ps1}) relaunches itself under 64-bit
+ PowerShell before querying, because the Checkmk agent runs as a 32-bit
+ process and the {root\MicrosoftDFS} provider is only visible to 64-bit
+ callers. Without this relaunch no section is produced and no services
+ are discovered.
+
+item:
+ The name of the replicated folder ({ReplicatedFolderName}).
+
+discovery:
+ One service is created for each replicated folder returned by the agent.

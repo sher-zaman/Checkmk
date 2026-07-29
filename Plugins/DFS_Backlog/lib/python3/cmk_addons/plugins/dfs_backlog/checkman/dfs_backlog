@@ -1,0 +1,31 @@
+title: DFS Replication: Backlog per Replicated Folder and Partner
+agents: windows
+catalog: os/storage
+license: GPLv2
+distribution:
+description:
+ This check monitors the DFS Replication (DFSR) backlog, that is the number
+ of files that are still queued for replication for a given replicated folder
+ towards or from a replication partner, as seen from the perspective of the
+ monitored server.
+
+ One service is produced per replicated folder, per partner and per
+ direction ({from} the partner and {to} the partner). The backlog file count
+ is compared against warning and critical levels (defaults: {WARN} at 300,
+ {CRIT} at 1000). A pairing that cannot be evaluated (for example an
+ unreachable partner) is reported by the agent as {NULL} and treated as
+ {DFSR Disabled} ({OK}) rather than a false alarm.
+
+ The agent plugin ({dfs_backlog.ps1}) relaunches itself under 64-bit
+ PowerShell before querying, because the Checkmk agent runs as a 32-bit
+ process and the {root\MicrosoftDFS} provider is only visible to 64-bit
+ callers. Computing the backlog requires WMI/DCOM access to the replication
+ partner, performed under the machine account.
+
+item:
+ The replicated folder together with the direction and partner, e.g.
+ {SYSVOL from DC02}.
+
+discovery:
+ One service is created for each folder/partner/direction pairing returned
+ by the agent.
