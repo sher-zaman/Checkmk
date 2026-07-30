@@ -8,34 +8,37 @@ Built-in vCenter monitoring covers the virtual infrastructure the appliance mana
 
 ## What it monitors
 
-- **VCSA Service \<name\>**: state and health per vMon service. Automatic services not running or reporting degraded health are CRIT.
-- **VCSA Health \<area\>**: appliance health colours mapped to states.
-- **VCSA CPU utilization**: utilization and CPU steal, 80/90% and 5/10%.
-- **VCSA Memory utilization**: utilization, used/total bytes, swap page rate, 80/90%.
-- **VCSA Filesystem \<name\>**: per-filesystem usage, 80/90%. Archive excluded from levels by default.
-- **VCSA Interface \<name\>**: link state, address mode, gateway, throughput, errors and drops. Link down is CRIT.
-- **VCSA DNS Configuration**: name servers and appliance hostname. No servers is CRIT.
-- **VCSA Time Synchronization**: mode, NTP reachability, measured clock drift. Drift 30/300 seconds.
-- **VCSA Update**: status, version, and staleness of the last repository check, 14/30 days.
-- **VCSA Root Password**: remaining validity, 14/7 days. Reported even if the account becomes unreadable.
-- **VCSA Certificate**: machine TLS validity, 30/15 days, plus a hostname-to-certificate check.
-- **VCSA Certificate \<name\>**: signing and trusted root certificates, 30/15 days.
-- **VCSA Database Usage**: database usage by category with retention tiers, no default levels.
-- **VCSA Access Settings**: SSH, DCUI, shell and console CLI state. OK by default.
-- **VCSA Pending Shutdown**, **VCSA Proxy**, **VCSA Syslog Forwarding**, **VCSA VCHA Cluster**, **VCSA Replication**: each discovered only where configured.
-- **Uptime**: via the built-in uptime check.
+- **Services & health**: vMon service state and health (CRIT on failure/degraded), appliance health areas (colour-mapped states)
+- **Resources**: CPU utilization + steal, memory utilization + bytes + swap page rate (80/90%)
+- **Storage**: per-filesystem usage, 80/90%, archive excluded by default
+- **Network**: interface link/mode/gateway/throughput/errors/drops, DNS servers and hostname
+- **Time**: sync mode, NTP reachability, measured clock drift (30/300s)
+- **Update**: status, version, staleness of last repository check (14/30 days)
+- **Security**: root password expiry (14/7 days), machine/signing/trusted-root certificates (30/15 days) with a hostname match check, access settings (SSH/DCUI/shell/CLI)
+- **Optional, discovered only where configured**: proxy, syslog forwarding, pending shutdown, database usage, VCHA cluster, replication
+- **Uptime**: via the built-in uptime check
 
-Where an endpoint fails, only that section is affected; the host-level services report the failure instead of disappearing. Every check ships with working defaults; no ruleset configuration is required.
+Where an endpoint fails, only that section is affected; host-level services report the failure instead of disappearing. Every check ships with working defaults; no ruleset configuration is required.
 
 ## Example services
 
 ```
-VCSA Service vpxd                 OK    Startup type: AUTOMATIC, State: STARTED, Health: HEALTHY
-VCSA Health Storage               OK    Status: green
-VCSA CPU utilization              OK    Utilization: 13.25%, Steal: 0.42%
-VCSA Filesystem log               WARN  Used: 85.20% (warn/crit at 80.00%/90.00%)
-VCSA Time Synchronization         OK    Mode: NTP, Clock drift: 0.35 s, All 2 NTP servers reachable
-VCSA Root Password                OK    Root password expires in: 89 days 10 hours
+VCSA Service vpxd             OK    Startup type: AUTOMATIC, State: STARTED, Health: HEALTHY
+VCSA Health Storage           OK    Status: green
+VCSA CPU utilization          OK    Utilization: 13.25%, Steal: 0.42%
+VCSA Memory utilization       OK    Utilization: 77.12%, 13.6 GiB of 17.6 GiB
+VCSA Filesystem seat          OK    Used: 12.70%, 3.10 GiB of 24.4 GiB
+VCSA Interface nic0           OK    Link: up, IPv4: 10.128.60.36, In: 12.7 kB/s, Out: 34.2 kB/s
+VCSA DNS Configuration        OK    2 server(s): 10.128.60.21, 10.128.60.121
+VCSA Time Synchronization     OK    Mode: NTP, Clock drift: 0.00 s, All 1 NTP servers reachable
+VCSA Update                   OK    Update status: UP_TO_DATE, Version: 8.0.3.00900 build 25413364, Last update check: 10 days 2 hours ago
+VCSA Root Password            OK    Root password expires in: 89 days 10 hours
+VCSA Certificate              OK    Remaining validity: 295 days 20 hours
+VCSA Certificate STS Signing  OK    Remaining validity: 6 years 315 days
+VCSA Database Usage           OK    Stats 0.65%, Events 6.70%, Alarms <0.01%, Tasks 0.15%
+VCSA Access Settings          OK    Enabled: Console CLI, DCUI, SSH
+VCSA Pending Shutdown         OK    No shutdown or reboot pending
+VCSA Syslog Forwarding        OK    1 target(s): 10.128.60.249:514 (UDP)
 ```
 
 ## Graphing
