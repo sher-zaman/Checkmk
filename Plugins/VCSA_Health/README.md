@@ -35,7 +35,7 @@ VCSA Health Storage               OK    Status: green
 VCSA CPU utilization              OK    Utilization: 13.25%, Steal: 0.42%
 VCSA Filesystem log               WARN  Used: 85.20% (warn/crit at 80.00%/90.00%)
 VCSA Time Synchronization         OK    Mode: NTP, Clock drift: 0.35 s, All 2 NTP servers reachable
-VCSA Root Password                CRIT  Unable to retrieve root account details, this commonly indicates an expired root password
+VCSA Root Password                OK    Root password expires in: 89 days 10 hours
 ```
 
 ## Graphing
