@@ -3,7 +3,12 @@
 #
 # Check plugin: VCSA vMon service states.
 #
-# Copyright (C) 2026 Sher Zaman <sher_zaman@outlook.com>
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
 # License: GPL-2.0-only
 #
 # Agent section format (sep 59):

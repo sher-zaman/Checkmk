@@ -10,7 +10,19 @@ description:
  {agent_vcsa_health} from the appliance monitoring API.
 
  Upper levels on the used space can be configured via the ruleset
- "VCSA filesystem usage". The default levels are 80/90 percent.
+ "VCSA filesystem usage". The default levels are 80/90 percent, which
+ matches the appliance's own warning threshold and leaves headroom before
+ the point at which vCenter stops its main service to protect the
+ database.
+
+ The archive filesystem is excluded from these levels by default, because
+ it is designed to fill and is documented as safe to ignore when high.
+ Levels can be applied to it as well via the same ruleset.
+
+ The percentage comes from the appliance's own utilization metric rather
+ than being derived from the used and total values, whose declared units
+ are not consistent between appliances. Absolute sizes are shown only when
+ both underlying values were reported in the same unit.
 
 item:
  The name of the filesystem.

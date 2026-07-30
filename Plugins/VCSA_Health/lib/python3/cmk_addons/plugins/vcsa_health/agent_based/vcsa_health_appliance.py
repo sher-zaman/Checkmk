@@ -3,7 +3,12 @@
 #
 # Check plugin: VCSA appliance health areas.
 #
-# Copyright (C) 2026 Sher Zaman <sher_zaman@outlook.com>
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
 # License: GPL-2.0-only
 #
 # Agent section format (sep 59):
@@ -19,13 +24,14 @@ from cmk.agent_based.v2 import (
     State,
 )
 
-_COLOR_STATES = {
-    "green": State.OK,
-    "yellow": State.WARN,
-    "orange": State.WARN,
-    "red": State.CRIT,
-    "gray": State.UNKNOWN,
-    "grey": State.UNKNOWN,
+# Colour to parameter key. "grey" is accepted as an alias for "gray".
+_COLOR_KEYS = {
+    "green": "green",
+    "yellow": "yellow",
+    "orange": "orange",
+    "red": "red",
+    "gray": "gray",
+    "grey": "gray",
 }
 
 
@@ -44,11 +50,12 @@ def discover_vcsa_health_appliance(section) -> DiscoveryResult:
         yield Service(item=area)
 
 
-def check_vcsa_health_appliance(item, section) -> CheckResult:
+def check_vcsa_health_appliance(item, params, section) -> CheckResult:
     color = section.get(item)
     if color is None:
         return
-    state = _COLOR_STATES.get(color, State.UNKNOWN)
+    key = _COLOR_KEYS.get(color)
+    state = State(params[key]) if key and key in params else State.UNKNOWN
     yield Result(state=state, summary="Status: %s" % color)
 
 
@@ -58,4 +65,12 @@ check_plugin_vcsa_health_appliance = CheckPlugin(
     sections=["vcsa_health_appliance"],
     discovery_function=discover_vcsa_health_appliance,
     check_function=check_vcsa_health_appliance,
+    check_ruleset_name="vcsa_health_appliance",
+    check_default_parameters={
+        "green": 0,
+        "yellow": 1,
+        "orange": 1,
+        "red": 2,
+        "gray": 3,
+    },
 )

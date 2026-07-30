@@ -1,0 +1,31 @@
+title: VMware vCenter Server Appliance: Time Synchronization
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the time synchronization configuration of a VMware
+ vCenter Server Appliance (VCSA): the synchronization mode (NTP or host
+ time) and, when NTP is used, the reachability of the configured NTP
+ servers. The data is retrieved by the special agent {agent_vcsa_health}.
+
+ Accurate time is required for single sign-on token validation and
+ certificate checks, so drift on the appliance causes widespread and
+ confusing authentication failures.
+
+ The service also reports the measured clock drift between the appliance
+ and the Checkmk server, along with the appliance's own date, time and
+ timezone. Drift is compared as a magnitude, so an appliance running fast
+ is treated the same as one running slow. Default levels are 30 and 300
+ seconds, well inside the tolerance at which single sign-on token
+ validation begins to fail.
+
+ By default the service is {CRIT} if time synchronization is disabled, if
+ no NTP server is configured, or if none of the configured servers is
+ reachable, and {WARN} if only some servers are reachable. All states and
+ the drift levels are configurable via the ruleset "VCSA time
+ synchronization". Appliances synchronizing from the host rather than NTP
+ report no servers, and this is not treated as a fault.
+
+discovery:
+ One service is created per appliance.

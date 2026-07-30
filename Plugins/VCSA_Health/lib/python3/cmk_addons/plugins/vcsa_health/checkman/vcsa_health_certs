@@ -1,0 +1,29 @@
+title: VMware vCenter Server Appliance: Signing and Trusted Root Certificates
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the remaining validity of the signing certificate
+ and the trusted root chain certificates of a VMware vCenter Server
+ Appliance (VCSA). These certificates expire on their own schedules,
+ independently of the machine TLS certificate, and their expiry has
+ historically caused vCenter outages. The data is retrieved by the
+ special agent {agent_vcsa_health}.
+
+ Lower levels on the remaining validity can be configured via the
+ ruleset "VCSA signing and trusted root certificates". The default
+ levels are 30 days {WARN} and 15 days {CRIT}. An expired certificate is
+ always {CRIT}.
+
+ Reading these certificates requires a certificate management privilege
+ in addition to the appliance API permissions. If the configured account
+ lacks it, no services are discovered and the remaining checks are
+ unaffected.
+
+item:
+ The certificate name, for example {STS Signing} or {Trusted Root} with
+ the chain identifier.
+
+discovery:
+ One service is created for each certificate reported by the appliance.

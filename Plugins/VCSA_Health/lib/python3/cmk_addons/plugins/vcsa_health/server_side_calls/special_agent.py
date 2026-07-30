@@ -3,7 +3,12 @@
 #
 # Server-side call configuration for the VCSA health special agent.
 #
-# Copyright (C) 2026 Sher Zaman <sher_zaman@outlook.com>
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
 # License: GPL-2.0-only
 
 from cmk.server_side_calls.v1 import (
@@ -25,14 +30,11 @@ def _commands_function(params, host_config: HostConfig):
     if params.get("no_cert_check"):
         args.append("--no-cert-check")
 
-    # The password is stored in the Checkmk password store and referenced by
-    # ID in the rule. unsafe() makes Checkmk resolve the reference to the
-    # actual value in this argument before the agent runs, which a standalone
-    # agent requires (passing the Secret directly would hand the agent a
-    # password-store reference that it cannot resolve without Checkmk-internal
-    # APIs). The resolved value is visible in the process table while the agent
-    # runs; this is the standard behaviour for third-party special agents.
-    args.extend(["--password", params["password"].unsafe()])
+    # The bare Secret is passed rather than Secret.unsafe(). Checkmk replaces it
+    # with a password store reference at the process level, so the plaintext
+    # credential never appears in argv or in the process table. The agent
+    # resolves that reference in its own memory via the password store.
+    args.extend(["--secret-id", params["password"]])
     args.append(host_config.primary_ip_config.address or host_config.name)
 
     yield SpecialAgentCommand(command_arguments=args)

@@ -1,0 +1,18 @@
+title: VMware vCenter Server Appliance: Proxy Configuration
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check reports the HTTP, HTTPS and FTP proxy configuration of a VMware
+ vCenter Server Appliance (VCSA). The data is retrieved by the special agent
+ {agent_vcsa_health}.
+
+ A broken or changed proxy stops the appliance reaching the update
+ repository, so the configuration is worth watching where one is in use. The
+ service is {OK} by default; the ruleset "VCSA proxy configuration" allows a
+ site to declare that no proxy should be enabled.
+
+discovery:
+ One service is created only on appliances where at least one proxy protocol
+ is enabled. Appliances without a proxy get no service.

@@ -5,13 +5,20 @@ license: GPL-2.0-only
 distribution: check_mk
 description:
  This check monitors the update status of a VMware vCenter Server
- Appliance (VCSA) and reports the installed product version. The data
- is retrieved by the special agent {agent_vcsa_health} from the
- appliance REST API.
+ Appliance (VCSA), reports the installed product version, and checks how
+ long ago the appliance last queried the update repository. The data is
+ retrieved by the special agent {agent_vcsa_health}.
 
- The state is {OK} if the appliance is up to date, {WARN} if updates
- are pending or an update is being staged or installed, and {CRIT} if
- an installation failed or a rollback is in progress.
+ The state is {OK} if the appliance is up to date, {WARN} if updates are
+ pending or an update is being staged or installed, and {CRIT} if an
+ installation failed or a rollback is in progress.
+
+ An appliance that has stopped querying the update repository keeps
+ reporting that it is up to date indefinitely, which hides pending
+ updates. Upper levels on the age of the last check can therefore be
+ configured via the ruleset "VCSA update status", with defaults of 14 days
+ {WARN} and 30 days {CRIT}. Appliances that do not report a last query
+ time are not checked for staleness.
 
 discovery:
  One service is created per appliance.

@@ -1,0 +1,17 @@
+title: VMware vCenter Server Appliance: Pending Shutdown
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check reports whether a shutdown or reboot has been scheduled on a
+ VMware vCenter Server Appliance (VCSA), including the scheduled time and
+ the recorded reason. The data is retrieved by the special agent
+ {agent_vcsa_health}.
+
+ A pending action is {WARN} by default, configurable via the ruleset "VCSA
+ pending shutdown". The service is always discovered and reports {UNKNOWN}
+ if the status cannot be retrieved, so it cannot silently disappear.
+
+discovery:
+ One service is created per appliance.

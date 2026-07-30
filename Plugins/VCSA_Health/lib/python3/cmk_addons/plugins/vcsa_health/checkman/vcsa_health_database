@@ -1,0 +1,25 @@
+title: VMware vCenter Server Appliance: Database Usage
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check reports vCenter database usage broken down by category
+ (statistics, events, alarms and tasks) together with the size of each
+ statistics retention tier (hourly, daily, monthly and yearly). The data is
+ retrieved by the special agent {agent_vcsa_health} from the appliance
+ monitoring API.
+
+ The breakdown identifies which category is consuming database space, which
+ is what distinguishes an actionable alert from one that requires manual
+ investigation on the appliance. A dominant hourly tier typically indicates
+ a statistics level set higher than required.
+
+ No levels are applied by default. The appliance does not document what the
+ reported percentage is relative to, so any shipped threshold would be
+ arbitrary. All values are collected and graphed regardless, so levels can
+ be chosen from observed behaviour using the ruleset "VCSA database usage".
+
+discovery:
+ One service is created per appliance where the database metrics are
+ reported.

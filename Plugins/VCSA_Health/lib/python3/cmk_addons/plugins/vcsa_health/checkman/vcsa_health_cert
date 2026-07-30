@@ -13,6 +13,12 @@ description:
  ruleset "VCSA TLS certificate". The default levels are 30 days {WARN}
  and 15 days {CRIT}. An expired certificate is always {CRIT}.
 
+ The service also checks that the appliance hostname appears in the
+ certificate, either as the common name or among the subject alternative
+ names. A hostname absent from both causes a certificate warning for every
+ client connecting by that name, and reports {WARN} by default. The
+ comparison is case-insensitive, since DNS names are.
+
 discovery:
  One service is created if the certificate information is accessible
  with the configured account.

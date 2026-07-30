@@ -1,0 +1,30 @@
+title: VMware vCenter Server Appliance: Root Password Expiry
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the remaining validity of the root account password
+ of a VMware vCenter Server Appliance (VCSA). The data is retrieved by
+ the special agent {agent_vcsa_health}.
+
+ An expired root password locks administrators out of the appliance
+ console and the management interface, so early warning is valuable.
+
+ Lower levels on the remaining time can be configured via the ruleset
+ "VCSA root password expiry". The default levels are 14 days {WARN} and
+ 7 days {CRIT}, the latter matching the appliance's own warning window.
+ If the appliance reports no expiry date the password does not expire,
+ which is {OK} by default and configurable. A disabled root account is
+ {WARN}.
+
+ On an appliance whose root password has already expired the account
+ endpoint answers with an error rather than an expiry date. The service
+ reports {CRIT} in that case rather than disappearing, since an appliance
+ that has already locked out is exactly when the check matters. The
+ appliance-wide password policy is reported alongside for context; note
+ that it does not govern the root account, which carries its own maximum
+ password age.
+
+discovery:
+ One service is created per appliance.

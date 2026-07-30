@@ -1,0 +1,17 @@
+title: VMware vCenter Server Appliance: Replication
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check reports Enhanced Linked Mode replication for a VMware vCenter
+ Server Appliance (VCSA), listing the replication partners of each node and
+ the availability and reported lag of each partnership. The data is
+ retrieved by the special agent {agent_vcsa_health}.
+
+ An unavailable replication partner is {CRIT} by default, configurable via
+ the ruleset "VCSA replication".
+
+discovery:
+ One service is created only on appliances that have at least one
+ replication partner. Standalone embedded deployments get no service.

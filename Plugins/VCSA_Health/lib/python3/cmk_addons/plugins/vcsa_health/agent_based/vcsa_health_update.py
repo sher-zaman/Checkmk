@@ -3,7 +3,12 @@
 #
 # Check plugin: VCSA update status.
 #
-# Copyright (C) 2026 Sher Zaman <sher_zaman@outlook.com>
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
 # License: GPL-2.0-only
 #
 # Agent section format (sep 59):
@@ -20,6 +25,7 @@ from cmk.agent_based.v2 import (
     Result,
     Service,
     State,
+    check_levels,
     render,
 )
 
@@ -63,7 +69,7 @@ def discover_vcsa_health_update(section) -> DiscoveryResult:
         yield Service()
 
 
-def check_vcsa_health_update(section) -> CheckResult:
+def check_vcsa_health_update(params, section) -> CheckResult:
     if not section:
         return
 
@@ -83,12 +89,17 @@ def check_vcsa_health_update(section) -> CheckResult:
             details += " build %s" % section["build"]
         yield Result(state=State.OK, summary="Version: %s" % details)
 
+    # Age of the last repository check. An appliance that has stopped checking
+    # keeps reporting UP_TO_DATE indefinitely, so a stale check is a blind spot
+    # rather than a harmless detail.
     query_time = section.get("query_time")
     if query_time:
-        age = time.time() - query_time
-        yield Result(
-            state=State.OK,
-            notice="Last update check: %s ago" % render.timespan(max(age, 0)),
+        yield from check_levels(
+            max(time.time() - query_time, 0),
+            levels_upper=params.get("last_check_age"),
+            metric_name="vcsa_update_check_age",
+            label="Last update check",
+            render_func=lambda v: "%s ago" % render.timespan(v),
         )
 
 
@@ -98,4 +109,8 @@ check_plugin_vcsa_health_update = CheckPlugin(
     sections=["vcsa_health_update"],
     discovery_function=discover_vcsa_health_update,
     check_function=check_vcsa_health_update,
+    check_ruleset_name="vcsa_health_update",
+    check_default_parameters={
+        "last_check_age": ("fixed", (1209600.0, 2592000.0)),  # 14 d / 30 d
+    },
 )

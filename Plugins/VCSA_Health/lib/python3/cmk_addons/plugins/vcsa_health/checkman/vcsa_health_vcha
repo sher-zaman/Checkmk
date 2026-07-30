@@ -1,0 +1,20 @@
+title: VMware vCenter Server Appliance: High Availability Cluster
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check reports the state of a vCenter High Availability (VCHA) cluster,
+ covering the cluster mode and the state of the active, passive and witness
+ nodes. The data is retrieved by the special agent {agent_vcsa_health}.
+
+ An enabled cluster is {OK}, maintenance and configuring modes are {WARN},
+ and a node that is not up is {CRIT}. All states are configurable via the
+ ruleset "VCSA High Availability cluster". Where the appliance reports a
+ mode or node state that is not recognised, the service reports {UNKNOWN}
+ rather than inferring health, so an unexpected response cannot produce a
+ confident but incorrect result.
+
+discovery:
+ One service is created only on appliances where VCHA is configured.
+ Appliances without VCHA get no service.

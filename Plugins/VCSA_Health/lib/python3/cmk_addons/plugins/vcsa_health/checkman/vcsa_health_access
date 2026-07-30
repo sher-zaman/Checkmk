@@ -1,0 +1,19 @@
+title: VMware vCenter Server Appliance: Access Settings
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check reports the enabled state of the appliance access methods of a
+ VMware vCenter Server Appliance (VCSA): SSH, the Direct Console User
+ Interface, the BASH shell and the console-based controlled CLI. The data is
+ retrieved by the special agent {agent_vcsa_health}.
+
+ Whether any given method should be enabled is a site policy decision rather
+ than a universal one, so the service is {OK} regardless of the current state
+ by default and simply reports which methods are enabled. Use the ruleset
+ "VCSA access settings" to declare the expected state per method, and the
+ service then reports configuration drift against that policy.
+
+discovery:
+ One service is created per appliance.

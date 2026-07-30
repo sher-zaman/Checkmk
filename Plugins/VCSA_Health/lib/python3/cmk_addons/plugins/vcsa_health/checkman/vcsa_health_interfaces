@@ -1,0 +1,37 @@
+title: VMware vCenter Server Appliance: Network Interfaces
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the network interfaces of a VMware vCenter Server
+ Appliance (VCSA): the link status and IPv4 address from the appliance
+ networking API, together with throughput, packet rate, packet errors
+ and dropped packets from the appliance monitoring API. The data is
+ retrieved by the special agent {agent_vcsa_health}.
+
+ The service also reports the IPv4 address mode, prefix length and default
+ gateway. A link that is reported as down is {CRIT} by default. Upper
+ levels on errors and drops can be configured via the ruleset "VCSA
+ network interfaces", with defaults of 10 {WARN} and 100 {CRIT}. Error and
+ drop values are per-sample counts as reported by the appliance, not rates.
+
+ Both static and DHCP addressing are legitimate, so no expectation is set
+ by default. Declaring the expected address mode in the ruleset detects an
+ appliance whose addressing has changed, which is rare but disruptive.
+
+ Throughput, packet rate, and errors and drops are graphed separately,
+ with inbound and outbound values shown in opposite directions.
+
+ Note that the appliance reports averaged samples from its own
+ monitoring API rather than interface counters, so the values reflect
+ the averaging window of the appliance and not the Checkmk check
+ interval. Loopback interfaces are not discovered.
+
+item:
+ The interface name as reported by the appliance, for example {nic0}.
+
+discovery:
+ One service is created for each non-loopback interface. Interface
+ naming differs between the appliance APIs (for example {nic0} versus
+ {eth0}); the names are matched automatically.

@@ -1,0 +1,24 @@
+title: VMware vCenter Server Appliance: DNS Configuration
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check monitors the DNS server configuration of a VMware vCenter
+ Server Appliance (VCSA), reporting the configuration mode and the
+ configured name servers. The data is retrieved by the special agent
+ {agent_vcsa_health}.
+
+ Name resolution failures on vCenter cause widespread and confusing
+ errors across the virtual infrastructure, so an appliance without a
+ configured DNS server is {CRIT} by default. This state is configurable
+ via the ruleset "VCSA DNS configuration". The appliance hostname, its
+ primary network identifier, is reported alongside.
+
+ Note that this check verifies that name servers are configured. It does
+ not verify that name resolution works, since the appliance offers no
+ resolution test and testing from the Checkmk server would exercise a
+ different resolver.
+
+discovery:
+ One service is created per appliance.

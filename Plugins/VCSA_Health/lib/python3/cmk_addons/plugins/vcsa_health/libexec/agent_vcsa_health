@@ -4,7 +4,12 @@
 # agent_vcsa_health - Checkmk special agent for VMware vCenter Server
 # Appliance (VCSA) health monitoring via the appliance REST API.
 #
-# Copyright (C) 2026 Sher Zaman <sher_zaman@outlook.com>
+# Author:   Sher Zaman
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
 #
 # Supersedes the legacy "vcsa7_health_status" package originally created
 # by Thomas Sielaff and Martin Hasin.
@@ -21,12 +26,27 @@
 # future releases).
 
 import argparse
+import base64
 import json
 import sys
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import requests
 import urllib3
+
+# The password is passed as a password-store reference rather than plain text,
+# so the credential never appears in the process table. Resolving that
+# reference needs Checkmk's password store, which is present when the agent is
+# invoked by the Checkmk core but not when it is run by hand. Manual runs use
+# --password or stdin instead.
+try:
+    from cmk.utils import password_store as _pwstore
+
+    _HAVE_PWSTORE = True
+except ImportError:  # pragma: no cover - depends on execution environment
+    _HAVE_PWSTORE = False
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -52,6 +72,22 @@ PERF_CATEGORIES = {
     "com.vmware.applmgmt.mon.cat.swap": "Swap",
 }
 
+# Per-interface network metrics, mapped from the appliance metric id prefix to
+# the key emitted in the section. Values in kb_per_sec are converted to bytes.
+NET_METRICS = {
+    "net.rx.activity": ("rx_activity", 1024.0),
+    "net.tx.activity": ("tx_activity", 1024.0),
+    "net.rx.packetRate": ("rx_packets", 1.0),
+    "net.tx.packetRate": ("tx_packets", 1.0),
+    "net.rx.error": ("rx_errors", 1.0),
+    "net.tx.error": ("tx_errors", 1.0),
+    "net.rx.drop": ("rx_drops", 1.0),
+    "net.tx.drop": ("tx_drops", 1.0),
+}
+
+# Interfaces excluded from monitoring (loopback).
+NET_EXCLUDE = {"lo", "lo0", "loopback"}
+
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description="Checkmk VCSA health special agent")
@@ -59,7 +95,13 @@ def parse_args(argv):
     parser.add_argument("--username", required=True, help="API username")
     parser.add_argument(
         "--password",
-        help="API password (if omitted, the password is read from stdin)",
+        help="API password in plain text. Intended for manual runs only; "
+        "the Checkmk core uses --secret-id instead.",
+    )
+    parser.add_argument(
+        "--secret-id",
+        help="Password store reference in the form <id>:<store file>. "
+        "Resolved inside this process so the password never reaches argv.",
     )
     parser.add_argument(
         "--no-cert-check",
@@ -73,6 +115,36 @@ def parse_args(argv):
         help="Dump raw API responses to stderr and raise exceptions",
     )
     return parser.parse_args(argv)
+
+
+def resolve_password(args):
+    """Return the plaintext password from whichever source was supplied.
+
+    Preference order: an explicit --password (manual runs), then a
+    --secret-id password store reference (how the Checkmk core invokes this
+    agent), then stdin (manual runs without shell history exposure).
+    """
+    if args.password is not None:
+        return args.password
+
+    if args.secret_id:
+        if not _HAVE_PWSTORE:
+            sys.stderr.write(
+                "Cannot resolve --secret-id: Checkmk's password store is not "
+                "importable. Use --password for manual runs.\n"
+            )
+            sys.exit(1)
+        if ":" not in args.secret_id:
+            sys.stderr.write("Malformed --secret-id, expected <id>:<store file>\n")
+            sys.exit(1)
+        secret_id, store_file = args.secret_id.split(":", 1)
+        try:
+            return _pwstore.lookup(Path(store_file), secret_id)
+        except Exception as exc:  # pylint: disable=broad-except
+            sys.stderr.write("Failed to resolve password from store: %s\n" % exc)
+            sys.exit(1)
+
+    return sys.stdin.readline().rstrip("\n")
 
 
 def sanitize(value):
@@ -90,6 +162,78 @@ def to_epoch(timestamp):
         return None
 
 
+def _der_tlv(data, pos):
+    """Read one DER tag-length-value header. Returns (tag, value_pos, length)."""
+    tag = data[pos]
+    pos += 1
+    length = data[pos]
+    pos += 1
+    if length & 0x80:
+        n = length & 0x7F
+        length = int.from_bytes(data[pos : pos + n], "big")
+        pos += n
+    return tag, pos, length
+
+
+def _parse_asn1_time(tag, value):
+    value = value.strip().rstrip("Z")
+    try:
+        if tag == 0x17:  # UTCTime, YYMMDDHHMMSS
+            parsed = datetime.strptime(value[:12], "%y%m%d%H%M%S")
+        else:  # GeneralizedTime, YYYYMMDDHHMMSS
+            parsed = datetime.strptime(value[:14], "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=timezone.utc).timestamp()
+
+
+def cert_valid_to(pem):
+    """Return the notAfter of a PEM certificate as a unix epoch, or None.
+
+    The signing certificate and trusted root chain endpoints return raw PEM
+    rather than parsed validity dates, so the notAfter is read directly from
+    the DER structure. Only the standard library is used to avoid adding a
+    dependency.
+    """
+    try:
+        body = "".join(
+            line.strip()
+            for line in pem.replace("\\n", "\n").splitlines()
+            if line.strip() and "-----" not in line
+        )
+        der = base64.b64decode(body)
+        _, pos, _ = _der_tlv(der, 0)  # Certificate SEQUENCE
+        _, pos, length = _der_tlv(der, pos)  # tbsCertificate SEQUENCE
+        end = pos + length
+        seq_seen = 0
+        while pos < end:
+            tag, vpos, vlen = _der_tlv(der, pos)
+            if tag == 0x30:
+                seq_seen += 1
+                if seq_seen == 3:  # signature, issuer, then validity
+                    inner, inner_end, times = vpos, vpos + vlen, []
+                    while inner < inner_end and len(times) < 2:
+                        ttag, tpos, tlen = _der_tlv(der, inner)
+                        times.append((ttag, der[tpos : tpos + tlen].decode()))
+                        inner = tpos + tlen
+                    if len(times) == 2:
+                        return _parse_asn1_time(*times[1])
+                    return None
+            pos = vpos + vlen
+    except Exception:  # pylint: disable=broad-except
+        return None
+    return None
+
+
+def normalize_iface(name):
+    """Interface naming differs between APIs (nic0 vs eth0). Return variants."""
+    variants = {name}
+    for prefix, other in (("nic", "eth"), ("eth", "nic")):
+        if name.startswith(prefix) and name[len(prefix) :].isdigit():
+            variants.add(other + name[len(prefix) :])
+    return variants
+
+
 class VcsaSession:
     def __init__(self, args):
         self._base = "https://%s" % args.host
@@ -103,6 +247,7 @@ class VcsaSession:
         # verify=False. A per-request value cannot be overridden this way,
         # while verify=True still honours the environment CA bundle.
         self._verify = not args.no_cert_check
+        self.last_status = None
 
     def login(self, username, password):
         response = self._session.post(
@@ -129,8 +274,43 @@ class VcsaSession:
         except requests.RequestException:
             pass
 
+    def post(self, path, payload=None, params=None):
+        """POST an API path. Returns parsed JSON or None on any failure.
+
+        Only used for read-only test operations such as the NTP reachability
+        check, which the appliance exposes as an action instead of a GET.
+        """
+        try:
+            response = self._session.post(
+                self._base + path,
+                json=payload,
+                params=params,
+                timeout=self._timeout,
+                verify=self._verify,
+            )
+        except requests.RequestException as exc:
+            if self._debug:
+                sys.stderr.write("POST %s failed: %s\n" % (path, exc))
+            return None
+        if self._debug:
+            sys.stderr.write(
+                "POST %s -> HTTP %s\n%s\n" % (path, response.status_code, response.text[:2000])
+            )
+        if response.status_code not in (200, 201):
+            return None
+        try:
+            return response.json()
+        except ValueError:
+            return None
+
     def get(self, path, params=None):
-        """GET an API path. Returns parsed JSON or None on any failure."""
+        """GET an API path. Returns parsed JSON or None on any failure.
+
+        The HTTP status of the most recent call is kept in ``last_status`` so
+        callers that must always emit a section can report why a lookup failed
+        rather than silently producing nothing.
+        """
+        self.last_status = None
         try:
             response = self._session.get(
                 self._base + path,
@@ -146,6 +326,7 @@ class VcsaSession:
             sys.stderr.write(
                 "GET %s -> HTTP %s\n%s\n" % (path, response.status_code, response.text[:4000])
             )
+        self.last_status = response.status_code
         if response.status_code != 200:
             return None
         try:
@@ -155,12 +336,10 @@ class VcsaSession:
 
 
 def section_services(api):
-    # The vMon service list moved from /api/appliance/vmon/services (removed
-    # in vCenter 8.0 U3) to /api/vcenter/services. Try the current endpoint
-    # first and fall back to the legacy one for older 7.x/8.x builds.
+    # /api/vcenter/services is the correct path on every supported build.
+    # The older /api/appliance/vmon/services path returns 404 on 7.0.3 and on
+    # 8.0.3 alike, so there is no fallback worth making.
     data = api.get("/api/vcenter/services")
-    if not isinstance(data, dict):
-        data = api.get("/api/appliance/vmon/services")
     if not isinstance(data, dict):
         return
     print("<<<vcsa_health_services:sep(59)>>>")
@@ -231,9 +410,14 @@ def query_monitoring(api, names):
 
 
 def sections_monitoring(api):
+    """Emit resource, filesystem and network metric sections.
+
+    Returns the metric catalog so other sections can reuse it instead of
+    fetching /api/appliance/monitoring a second time.
+    """
     available = api.get("/api/appliance/monitoring")
     if not isinstance(available, list):
-        return
+        return {}
     catalog = {m.get("id"): m for m in available if isinstance(m, dict)}
 
     # CPU / memory / swap utilization: pick the percent metric advertised for
@@ -248,47 +432,128 @@ def sections_monitoring(api):
         if resource and "percent" in units and resource not in perf_map.values():
             perf_map[mid] = resource
 
-    perf_values = query_monitoring(api, list(perf_map)) if perf_map else {}
+    # Supplementary metrics queried by explicit id. Names are counterintuitive:
+    # mem.usage is the percentage while mem.util and mem.total are byte counts
+    # in kb, so the percentage must not be taken from mem.util.
+    extra_ids = [
+        mid for mid in ("cpu.steal", "mem.util", "mem.total", "swap.pageRate")
+        if mid in catalog
+    ]
+
+    values = query_monitoring(api, list(perf_map) + extra_ids)
+
     perf_lines = [
         "%s;%s;percent" % (perf_map[mid], value)
-        for mid, value in perf_values.items()
+        for mid, value in values.items()
         if mid in perf_map
     ]
+
+    def _kb_to_bytes(mid):
+        raw = values.get(mid)
+        if raw is None:
+            return None
+        unit = str(catalog.get(mid, {}).get("units", "")).lower()
+        return raw * 1024 if "kb" in unit else raw
+
+    if "cpu.steal" in values:
+        perf_lines.append("CPU_steal;%s;percent" % values["cpu.steal"])
+    mem_used = _kb_to_bytes("mem.util")
+    if mem_used is not None:
+        perf_lines.append("Memory_used;%s;bytes" % mem_used)
+    mem_total = _kb_to_bytes("mem.total")
+    if mem_total is not None:
+        perf_lines.append("Memory_total;%s;bytes" % mem_total)
+    if "swap.pageRate" in values:
+        perf_lines.append("Swap_page_rate;%s;pages_per_sec" % values["swap.pageRate"])
+
     if perf_lines:
         print("<<<vcsa_health_perf:sep(59)>>>")
         for line in sorted(perf_lines):
             print(line)
 
-    # Per-filesystem storage usage
+    # Per-filesystem storage usage.
+    #
+    # The appliance advertises storage.util.filesystem.<name> as a percentage
+    # for every filesystem, and that is used as the authoritative figure for
+    # thresholds. The used and totalsize values are collected as well for the
+    # absolute size display, but their declared units are not reliable: the
+    # same swap metric is reported as kb on one appliance and percent on
+    # another. Sizes are therefore only emitted when both used and totalsize
+    # agree on kb, and are omitted otherwise rather than rendered wrongly.
+    fs_prefixes = (
+        "storage.util.filesystem.",
+        "storage.used.filesystem.",
+        "storage.totalsize.filesystem.",
+    )
     fs_names = [
         mid
         for mid in catalog
-        if isinstance(mid, str)
-        and (
-            mid.startswith("storage.used.filesystem.")
-            or mid.startswith("storage.totalsize.filesystem.")
-        )
+        if isinstance(mid, str) and mid.startswith(fs_prefixes)
     ]
     fs_values = query_monitoring(api, fs_names) if fs_names else {}
+
     filesystems = {}
     for name, value in fs_values.items():
         parts = name.split(".")
         if len(parts) < 4:
             continue
         kind, fs = parts[1], ".".join(parts[3:])
-        unit = str(catalog.get(name, {}).get("units", ""))
-        if "kb" in unit.lower():
-            value *= 1024  # convert to bytes
-        filesystems.setdefault(fs, {})[kind] = value
-    fs_lines = [
-        "%s;%s;%s" % (sanitize(fs), values["used"], values["totalsize"])
-        for fs, values in sorted(filesystems.items())
-        if "used" in values and "totalsize" in values and values["totalsize"] > 0
-    ]
+        unit = str(catalog.get(name, {}).get("units", "")).lower()
+        entry = filesystems.setdefault(fs, {})
+        entry[kind] = value
+        entry[kind + "_unit"] = unit
+
+    fs_lines = []
+    for fs, values in sorted(filesystems.items()):
+        percent = values.get("util")
+        used, total = values.get("used"), values.get("totalsize")
+        sizes_trustworthy = (
+            used is not None
+            and total is not None
+            and "kb" in values.get("used_unit", "")
+            and "kb" in values.get("totalsize_unit", "")
+            and total > 0
+        )
+        if percent is None and sizes_trustworthy:
+            percent = used / total * 100.0
+        if percent is None:
+            continue
+        if sizes_trustworthy:
+            fs_lines.append(
+                "%s;%s;%s;%s" % (sanitize(fs), percent, used * 1024, total * 1024)
+            )
+        else:
+            fs_lines.append("%s;%s;;" % (sanitize(fs), percent))
+
     if fs_lines:
         print("<<<vcsa_health_filesystems:sep(59)>>>")
         for line in fs_lines:
             print(line)
+
+    # Per-interface network metrics. Metric ids are of the form
+    # net.<direction>.<kind>.<interface>, so the interface is the last element.
+    net_ids = {}  # metric id -> (interface, key, factor)
+    for mid in catalog:
+        if not isinstance(mid, str) or not mid.startswith("net."):
+            continue
+        for prefix, (key, factor) in NET_METRICS.items():
+            if mid.startswith(prefix + "."):
+                iface = mid[len(prefix) + 1 :]
+                if iface and iface.lower() not in NET_EXCLUDE:
+                    net_ids[mid] = (iface, key, factor)
+                break
+
+    net_values = query_monitoring(api, list(net_ids)) if net_ids else {}
+    net_lines = []
+    for mid, value in net_values.items():
+        iface, key, factor = net_ids[mid]
+        net_lines.append("%s;%s;%s" % (sanitize(iface), key, value * factor))
+    if net_lines:
+        print("<<<vcsa_health_net_metrics:sep(59)>>>")
+        for line in sorted(net_lines):
+            print(line)
+
+    return catalog
 
 
 def section_update(api):
@@ -351,22 +616,487 @@ def section_backup(api):
     )
 
 
-def section_certificate(api):
+def section_certificate(api, hostname=""):
+    """Machine TLS certificate, plus the appliance hostname for cross-checking.
+
+    The hostname is carried here rather than compared in the agent so the
+    check plug-in can report the mismatch with full context.
+    """
     data = api.get("/api/vcenter/certificate-management/vcenter/tls")
     if not isinstance(data, dict):
         return
     valid_to = to_epoch(data.get("valid_to"))
     if valid_to is None:
         return
+    san = data.get("subject_alternative_name")
+    if not isinstance(san, list):
+        san = []
     print("<<<vcsa_health_cert:sep(59)>>>")
     print(
-        "tls;%s;%s;%s"
+        "tls;%s;%s;%s;%s;%s"
         % (
             valid_to,
             sanitize(data.get("subject_dn", "")),
             sanitize(data.get("issuer_dn", "")),
+            sanitize(hostname),
+            ",".join(sanitize(entry) for entry in san if entry),
         )
     )
+
+
+def section_timesync(api):
+    mode = api.get("/api/appliance/timesync")
+    servers = api.get("/api/appliance/ntp")
+    clock = api.get("/api/appliance/system/time")
+    if (
+        not isinstance(mode, str)
+        and not isinstance(servers, list)
+        and not isinstance(clock, dict)
+    ):
+        return
+
+    lines = []
+    if isinstance(mode, str) and mode:
+        lines.append("mode;%s" % sanitize(mode))
+
+    # Measured drift against this host's clock. seconds_since_epoch is the only
+    # machine-readable field; the date/time/timezone fields are display text
+    # and are passed through separately for the service summary.
+    if isinstance(clock, dict):
+        epoch = clock.get("seconds_since_epoch")
+        if isinstance(epoch, (int, float)):
+            lines.append("drift;%s" % (time.time() - float(epoch)))
+        lines.append(
+            "clock;%s;%s;%s"
+            % (
+                sanitize(clock.get("date", "")),
+                sanitize(clock.get("time", "")),
+                sanitize(clock.get("timezone", "")),
+            )
+        )
+
+    if isinstance(servers, list) and servers:
+        names = [sanitize(s) for s in servers if s]
+        # Reachability is exposed as a test action rather than a GET. It is a
+        # read-only probe; if it is unavailable the servers are still listed.
+        results = api.post("/api/appliance/ntp", payload={"servers": names},
+                           params={"action": "test"})
+        status_by_server = {}
+        if isinstance(results, list):
+            for entry in results:
+                if not isinstance(entry, dict):
+                    continue
+                server = sanitize(entry.get("server", ""))
+                status = sanitize(entry.get("status", ""))
+                message = entry.get("message") or {}
+                text = ""
+                if isinstance(message, dict):
+                    text = sanitize(message.get("default_message", ""))
+                if server:
+                    status_by_server[server] = (status, text)
+        for name in names:
+            status, text = status_by_server.get(name, ("", ""))
+            lines.append("server;%s;%s;%s" % (name, status, text))
+
+    if lines:
+        print("<<<vcsa_health_timesync:sep(59)>>>")
+        for line in lines:
+            print(line)
+
+
+def section_local_accounts(api):
+    """Password expiry for the root account.
+
+    This section is always emitted. On an appliance whose root password has
+    already expired the endpoint answers HTTP 500 rather than returning an
+    expiry date, so staying silent would make the service disappear at exactly
+    the moment it matters. The failure is reported instead.
+    """
+    data = api.get("/api/appliance/local-accounts/root")
+    status = api.last_status
+    policy = api.get("/api/appliance/local-accounts/global-policy")
+
+    def _emit_policy():
+        # The appliance-wide policy is useful context even when the root
+        # account lookup itself failed, so it is emitted on both paths.
+        if isinstance(policy, dict):
+            print(
+                "policy;%s;%s;%s"
+                % (
+                    sanitize(policy.get("max_days", "")),
+                    sanitize(policy.get("min_days", "")),
+                    sanitize(policy.get("warn_days", "")),
+                )
+            )
+
+    print("<<<vcsa_health_local_accounts:sep(59)>>>")
+
+    if not isinstance(data, dict):
+        print("error;%s" % (status if status is not None else "no response"))
+        _emit_policy()
+        return
+
+    # password_expires_at is present only while the password actually expires;
+    # it is absent when max_days is -1 (never expires). The fallback recomputes
+    # it from last change plus max days if a build ever omits the field.
+    expires_at = to_epoch(data.get("password_expires_at"))
+    max_days = data.get("max_days_between_password_change")
+    if expires_at is None and isinstance(max_days, (int, float)) and max_days > 0:
+        changed = to_epoch(data.get("last_password_change"))
+        if changed is not None:
+            expires_at = changed + float(max_days) * 86400
+
+    print(
+        "root;%s;%s;%s;%s;%s"
+        % (
+            expires_at if expires_at is not None else "",
+            "1" if data.get("enabled", True) else "0",
+            sanitize(max_days if max_days is not None else ""),
+            sanitize(data.get("warn_days_before_password_expiration", "")),
+            to_epoch(data.get("last_password_change")) or "",
+        )
+    )
+    _emit_policy()
+
+
+def _emit_cert_line(item, pem):
+    valid_to = cert_valid_to(pem)
+    if valid_to is None:
+        return None
+    return "%s;%s" % (sanitize(item), valid_to)
+
+
+def section_certificates_extra(api):
+    """STS signing certificate and trusted root chain certificates."""
+    lines = []
+
+    signing = api.get("/api/vcenter/certificate-management/vcenter/signing-certificate")
+    if isinstance(signing, dict):
+        chains = []
+        active = signing.get("active_cert_chain")
+        if isinstance(active, dict):
+            chains.append(("STS Signing", active.get("cert_chain")))
+        for index, chain in enumerate(signing.get("signing_cert_chains") or [], start=1):
+            if isinstance(chain, dict):
+                chains.append(("STS Signing %d" % index, chain.get("cert_chain")))
+        seen = set()
+        for item, chain in chains:
+            if not isinstance(chain, list) or not chain:
+                continue
+            line = _emit_cert_line(item, chain[0])
+            if line and line.split(";")[1] not in seen:
+                seen.add(line.split(";")[1])
+                lines.append(line)
+
+    roots = api.get("/api/vcenter/certificate-management/vcenter/trusted-root-chains")
+    if isinstance(roots, list):
+        for entry in roots:
+            chain_id = entry.get("chain") if isinstance(entry, dict) else entry
+            if not chain_id:
+                continue
+            detail = api.get(
+                "/api/vcenter/certificate-management/vcenter/trusted-root-chains/%s"
+                % chain_id
+            )
+            pems = None
+            if isinstance(detail, dict):
+                inner = detail.get("cert_chain")
+                if isinstance(inner, dict):
+                    pems = inner.get("cert_chain")
+                elif isinstance(inner, list):
+                    pems = inner
+            if isinstance(pems, list) and pems:
+                line = _emit_cert_line("Trusted Root %s" % chain_id, pems[0])
+                if line:
+                    lines.append(line)
+
+    if lines:
+        print("<<<vcsa_health_certs:sep(59)>>>")
+        for line in lines:
+            print(line)
+
+
+def section_networking(api):
+    """Interfaces and DNS from a single call, returning the appliance hostname.
+
+    /api/appliance/networking answers with hostname, DNS servers and full
+    per-interface IPv4 configuration in one request, replacing three separate
+    calls. The individual endpoints are used as a fallback if the combined one
+    is unavailable on a given build.
+    """
+    combined = api.get("/api/appliance/networking")
+    hostname = ""
+
+    if isinstance(combined, dict):
+        dns = combined.get("dns") if isinstance(combined.get("dns"), dict) else {}
+        interfaces = combined.get("interfaces")
+        if not isinstance(interfaces, dict):
+            interfaces = {}
+        iface_entries = list(interfaces.values())
+        hostname = dns.get("hostname", "") or ""
+        dns_mode = dns.get("mode", "")
+        dns_servers = dns.get("servers") if isinstance(dns.get("servers"), list) else []
+    else:
+        iface_list = api.get("/api/appliance/networking/interfaces")
+        iface_entries = iface_list if isinstance(iface_list, list) else []
+        dns_raw = api.get("/api/appliance/networking/dns/servers")
+        dns_raw = dns_raw if isinstance(dns_raw, dict) else {}
+        dns_mode = dns_raw.get("mode", "")
+        dns_servers = dns_raw.get("servers") if isinstance(dns_raw.get("servers"), list) else []
+        host_raw = api.get("/api/appliance/networking/dns/hostname")
+        hostname = host_raw if isinstance(host_raw, str) else ""
+
+    iface_lines = []
+    for entry in iface_entries:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("interface_name") or entry.get("name") or ""
+        if not name or name.lower() in NET_EXCLUDE:
+            continue
+        ipv4 = entry.get("ipv4") if isinstance(entry.get("ipv4"), dict) else {}
+        iface_lines.append(
+            "%s;%s;%s;%s;%s;%s;%s"
+            % (
+                sanitize(name),
+                sanitize(entry.get("status", "")).lower(),
+                sanitize(entry.get("mac", "")),
+                sanitize(ipv4.get("address", "")),
+                sanitize(ipv4.get("mode", "")),
+                sanitize(ipv4.get("prefix", "")),
+                sanitize(ipv4.get("default_gateway", "")),
+            )
+        )
+    if iface_lines:
+        print("<<<vcsa_health_interfaces:sep(59)>>>")
+        for line in iface_lines:
+            print(line)
+
+    print("<<<vcsa_health_dns:sep(59)>>>")
+    print(
+        "dns;%s;%s;%s"
+        % (
+            sanitize(dns_mode),
+            ",".join(sanitize(entry) for entry in dns_servers if entry),
+            sanitize(hostname),
+        )
+    )
+
+    return hostname
+
+
+def section_access(api):
+    """SSH, DCUI, BASH shell and console CLI access states.
+
+    Three of these endpoints answer with a bare JSON boolean while shell
+    answers with an object, so each response shape is handled explicitly.
+    """
+    entries = (
+        ("SSH", "/api/appliance/access/ssh"),
+        ("DCUI", "/api/appliance/access/dcui"),
+        ("Shell", "/api/appliance/access/shell"),
+        ("Console CLI", "/api/appliance/access/consolecli"),
+    )
+    lines = []
+    for label, path in entries:
+        data = api.get(path)
+        if isinstance(data, bool):
+            lines.append("%s;%s;" % (label, "1" if data else "0"))
+        elif isinstance(data, dict) and "enabled" in data:
+            lines.append(
+                "%s;%s;%s"
+                % (
+                    label,
+                    "1" if data.get("enabled") else "0",
+                    sanitize(data.get("timeout", "")),
+                )
+            )
+    if lines:
+        print("<<<vcsa_health_access:sep(59)>>>")
+        for line in lines:
+            print(line)
+
+
+def section_proxy(api):
+    """Proxy configuration, emitted only when a proxy is actually enabled."""
+    data = api.get("/api/appliance/networking/proxy")
+    if not isinstance(data, dict):
+        return
+    lines = []
+    for protocol in sorted(data):
+        cfg = data.get(protocol)
+        if not isinstance(cfg, dict) or not cfg.get("enabled"):
+            continue
+        port = cfg.get("port")
+        lines.append(
+            "%s;%s;%s"
+            % (
+                sanitize(protocol).upper(),
+                sanitize(cfg.get("server", "")),
+                sanitize(port if port not in (None, -1) else ""),
+            )
+        )
+    if lines:
+        print("<<<vcsa_health_proxy:sep(59)>>>")
+        for line in lines:
+            print(line)
+
+
+def section_syslog(api):
+    """Syslog forwarding targets.
+
+    The section is emitted whenever the endpoint answers, including when the
+    target list is empty. Discovery gates on a target actually being present,
+    so an appliance that never forwarded logs gets no service, while one that
+    loses its last target keeps the service and can report the loss rather
+    than going stale.
+    """
+    data = api.get("/api/appliance/logging/forwarding")
+    if not isinstance(data, list):
+        return
+    print("<<<vcsa_health_syslog:sep(59)>>>")
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        print(
+            "%s;%s;%s"
+            % (
+                sanitize(entry.get("hostname", "")),
+                sanitize(entry.get("port", "")),
+                sanitize(entry.get("protocol", "")),
+            )
+        )
+
+
+def section_shutdown(api):
+    """Pending shutdown or reboot. Always emitted so it cannot vanish."""
+    data = api.get("/api/appliance/shutdown")
+    status = api.last_status
+    print("<<<vcsa_health_shutdown:sep(59)>>>")
+    if not isinstance(data, dict):
+        print("error;%s" % (status if status is not None else "no response"))
+        return
+    print(
+        "shutdown;%s;%s;%s"
+        % (
+            sanitize(data.get("action", "")),
+            sanitize(data.get("reason", "")),
+            to_epoch(data.get("shutdown_time")) or "",
+        )
+    )
+
+
+def section_database(api, catalog=None, values=None):
+    """vCenter database usage by category, plus statistics retention tiers."""
+    if not catalog:
+        return
+    wanted_util = {
+        "storage.util.directory.vcdb_stats": "stats",
+        "storage.util.directory.vcdb_events": "events",
+        "storage.util.directory.vcdb_alarms": "alarms",
+        "storage.util.directory.vcdb_tasks": "tasks",
+    }
+    wanted_size = {
+        "storage.totalsize.directory.vcdb_hourly_stats": "hourly",
+        "storage.totalsize.directory.vcdb_daily_stats": "daily",
+        "storage.totalsize.directory.vcdb_monthly_stats": "monthly",
+        "storage.totalsize.directory.vcdb_yearly_stats": "yearly",
+    }
+    ids = [mid for mid in list(wanted_util) + list(wanted_size) if mid in catalog]
+    if not ids:
+        return
+    data = query_monitoring(api, ids)
+    if not data:
+        return
+
+    lines = []
+    for mid, label in wanted_util.items():
+        if mid in data:
+            lines.append("util;%s;%s" % (label, data[mid]))
+    for mid, label in wanted_size.items():
+        if mid in data:
+            unit = str(catalog.get(mid, {}).get("units", "")).lower()
+            value = data[mid] * 1024 if "kb" in unit else data[mid]
+            lines.append("size;%s;%s" % (label, value))
+    if lines:
+        print("<<<vcsa_health_database:sep(59)>>>")
+        for line in lines:
+            print(line)
+
+
+def section_vcha(api):
+    """VCHA cluster state, emitted only where VCHA is configured.
+
+    NOTE: this section has not been verified against a live VCHA deployment.
+    Field names follow the documented shape. Parsing is deliberately tolerant
+    and the check plug-in reports UNKNOWN rather than a health verdict when the
+    expected fields are absent, so an unexpected shape cannot produce a
+    confident but wrong result.
+    """
+    data = api.get("/api/vcenter/vcha/cluster")
+    if not isinstance(data, dict) or not data:
+        return
+    nodes = []
+    for role in ("active", "passive", "witness"):
+        node = data.get(role)
+        if isinstance(node, dict):
+            nodes.append(
+                "%s;%s;%s"
+                % (
+                    role,
+                    sanitize(node.get("state", node.get("status", ""))),
+                    sanitize(node.get("failover_ip", {}).get("ip_address", ""))
+                    if isinstance(node.get("failover_ip"), dict)
+                    else "",
+                )
+            )
+    print("<<<vcsa_health_vcha:sep(59)>>>")
+    print(
+        "cluster;%s;%s"
+        % (
+            sanitize(data.get("mode", data.get("state", ""))),
+            sanitize(data.get("health", "")),
+        )
+    )
+    for line in nodes:
+        print("node;%s" % line)
+
+
+def section_replication(api):
+    """PSC replication status, emitted only for nodes with partners."""
+    nodes = api.get("/api/vcenter/topology/nodes")
+    if not isinstance(nodes, list):
+        return
+    partnered = []
+    for entry in nodes:
+        if not isinstance(entry, dict):
+            continue
+        partners = entry.get("replication_partners")
+        if isinstance(partners, list) and partners:
+            partnered.append((entry.get("node", ""), partners))
+    if not partnered:
+        return
+
+    status = api.get("/api/vcenter/topology/replication-status")
+    status_rows = status if isinstance(status, list) else []
+
+    print("<<<vcsa_health_replication:sep(59)>>>")
+    for node, partners in partnered:
+        print(
+            "node;%s;%s"
+            % (sanitize(node), ",".join(sanitize(x) for x in partners if x))
+        )
+    for row in status_rows:
+        if not isinstance(row, dict):
+            continue
+        print(
+            "status;%s;%s;%s;%s"
+            % (
+                sanitize(row.get("node", "")),
+                sanitize(row.get("partner", "")),
+                "1" if row.get("status_available") else "0",
+                sanitize(row.get("replication_lag", "")),
+            )
+        )
 
 
 def section_uptime(api):
@@ -378,7 +1108,7 @@ def section_uptime(api):
 
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
-    password = args.password if args.password is not None else sys.stdin.readline().rstrip("\n")
+    password = resolve_password(args)
 
     api = VcsaSession(args)
     try:
@@ -392,10 +1122,23 @@ def main(argv=None):
     try:
         section_services(api)
         section_appliance_health(api)
-        sections_monitoring(api)
+        catalog = sections_monitoring(api)
+        section_database(api, catalog=catalog)
         section_update(api)
         section_backup(api)
-        section_certificate(api)
+        # Networking is fetched first so the hostname is available for the
+        # certificate cross-check.
+        hostname = section_networking(api)
+        section_certificate(api, hostname=hostname)
+        section_certificates_extra(api)
+        section_timesync(api)
+        section_local_accounts(api)
+        section_access(api)
+        section_proxy(api)
+        section_syslog(api)
+        section_shutdown(api)
+        section_vcha(api)
+        section_replication(api)
         section_uptime(api)
     except Exception as exc:  # pylint: disable=broad-except
         if args.debug:

@@ -4,15 +4,27 @@ catalog: app/vmware
 license: GPL-2.0-only
 distribution: check_mk
 description:
- This check monitors the CPU, memory and swap utilization of a VMware
- vCenter Server Appliance (VCSA) using the appliance monitoring API.
- The data is retrieved by the special agent {agent_vcsa_health}.
+ This check monitors the CPU and memory utilization of a VMware vCenter
+ Server Appliance (VCSA) using the appliance monitoring API. The data is
+ retrieved by the special agent {agent_vcsa_health}.
 
- Upper levels on the utilization can be configured via the ruleset
- "VCSA resource utilization". The default levels are 80/90 percent.
+ The CPU service additionally reports CPU steal, the share of runtime the
+ hypervisor denied the appliance. Read together with utilization this
+ distinguishes an appliance that is busy from one that is being starved by
+ host contention. The memory service additionally reports used and total
+ memory in bytes, and the swap page rate, which shows whether memory
+ pressure is translating into actual swapping.
+
+ Upper levels on utilization default to 80/90 percent and on CPU steal to
+ 5/10 percent, both configurable via the ruleset "VCSA resource
+ utilization". Swap page rate carries no default levels.
+
+ Note that swap utilization is not offered as a separate service: the
+ appliance does not expose a swap percentage consistently, and swap
+ occupancy is already covered by the swap filesystem service.
 
 item:
- The resource: CPU, Memory or Swap.
+ The resource: CPU or Memory.
 
 discovery:
  One service is created for each available resource metric.

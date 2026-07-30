@@ -1,0 +1,18 @@
+title: VMware vCenter Server Appliance: Syslog Forwarding
+agents: vcsa_health
+catalog: app/vmware
+license: GPL-2.0-only
+distribution: check_mk
+description:
+ This check reports the configured syslog forwarding targets of a VMware
+ vCenter Server Appliance (VCSA), with host, port and protocol for each. The
+ data is retrieved by the special agent {agent_vcsa_health}.
+
+ An appliance that silently stops forwarding logs leaves a gap in any
+ central logging or SIEM pipeline. The service is {OK} while targets are
+ present. Where forwarding is mandatory, the ruleset "VCSA syslog
+ forwarding" sets the state to report when the last target is removed.
+
+discovery:
+ One service is created only on appliances with at least one forwarding
+ target configured.
