@@ -81,6 +81,7 @@ Validated in multiple production Checkmk environments, covering vCenter Server A
 
 ## Version history
 
+- **1.1.1**: halves the number of monitoring API requests by reusing the query parameter style the appliance accepts; a failed DNS lookup now reports UNKNOWN instead of reporting the appliance as having no name servers; the database usage summary no longer repeats a category that breaches its levels, and its metrics now carry threshold lines
 - **1.1.0**: adds access settings, proxy, syslog forwarding, pending shutdown, database usage, HA cluster and replication services; adds CPU steal, memory bytes, swap page rate, clock drift, interface address mode/gateway, and a certificate hostname check; filesystem percentages now taken from the appliance utilization metric with archive excluded by default; root password defaults changed to 14/7 days and reported even on account read failure; update staleness defaults changed to 14/30 days; credentials now resolved via the password store inside the agent
 - **1.0.0**: initial release, vMon service states, appliance health areas, resource and filesystem usage, update status, backup status, certificates, root password expiry, time synchronization, network interfaces and DNS, with rulesets, graphing and checkman pages
 

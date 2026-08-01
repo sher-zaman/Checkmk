@@ -225,15 +225,6 @@ def cert_valid_to(pem):
     return None
 
 
-def normalize_iface(name):
-    """Interface naming differs between APIs (nic0 vs eth0). Return variants."""
-    variants = {name}
-    for prefix, other in (("nic", "eth"), ("eth", "nic")):
-        if name.startswith(prefix) and name[len(prefix) :].isdigit():
-            variants.add(other + name[len(prefix) :])
-    return variants
-
-
 class VcsaSession:
     def __init__(self, args):
         self._base = "https://%s" % args.host
@@ -248,6 +239,10 @@ class VcsaSession:
         # while verify=True still honours the environment CA bundle.
         self._verify = not args.no_cert_check
         self.last_status = None
+        # Which monitoring query parameter style this appliance accepts.
+        # Determined on the first query and reused, so the rejected style is
+        # not retried on every subsequent call.
+        self.query_style = None
 
     def login(self, username, password):
         response = self._session.post(
@@ -380,21 +375,38 @@ def section_appliance_health(api):
             print(line)
 
 
-def query_monitoring(api, names):
-    """Query the appliance monitoring API for the given metric IDs."""
+def _query_params(names, prefix):
     end = datetime.now(timezone.utc)
     start = end - timedelta(minutes=30)
-    params = [
-        ("item.interval", "MINUTES5"),
-        ("item.function", "AVG"),
-        ("item.start_time", start.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
-        ("item.end_time", end.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
-    ] + [("item.names", name) for name in names]
-    data = api.get("/api/appliance/monitoring/query", params=params)
-    if data is None:
-        # Fall back to the parameter style without the "item." prefix
-        params = [(key.replace("item.", ""), value) for key, value in params]
-        data = api.get("/api/appliance/monitoring/query", params=params)
+    return [
+        (prefix + "interval", "MINUTES5"),
+        (prefix + "function", "AVG"),
+        (prefix + "start_time", start.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
+        (prefix + "end_time", end.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
+    ] + [(prefix + "names", name) for name in names]
+
+
+def query_monitoring(api, names):
+    """Query the appliance monitoring API for the given metric IDs.
+
+    Appliances differ in whether they expect the query parameters with or
+    without an "item." prefix, and reject the other form outright. The style
+    that works is determined once and then reused for the rest of the run,
+    rather than probing on every call.
+    """
+    if not names:
+        return {}
+
+    styles = ["", "item."] if api.query_style is None else [api.query_style]
+    data = None
+    for prefix in styles:
+        data = api.get(
+            "/api/appliance/monitoring/query", params=_query_params(names, prefix)
+        )
+        if isinstance(data, list):
+            api.query_style = prefix
+            break
+
     if not isinstance(data, list):
         return {}
     results = {}
@@ -825,7 +837,9 @@ def section_networking(api):
     is unavailable on a given build.
     """
     combined = api.get("/api/appliance/networking")
+    combined_status = api.last_status
     hostname = ""
+    collected = isinstance(combined, dict)
 
     if isinstance(combined, dict):
         dns = combined.get("dns") if isinstance(combined.get("dns"), dict) else {}
@@ -840,11 +854,14 @@ def section_networking(api):
         iface_list = api.get("/api/appliance/networking/interfaces")
         iface_entries = iface_list if isinstance(iface_list, list) else []
         dns_raw = api.get("/api/appliance/networking/dns/servers")
+        dns_status = api.last_status
+        collected = isinstance(dns_raw, dict)
         dns_raw = dns_raw if isinstance(dns_raw, dict) else {}
         dns_mode = dns_raw.get("mode", "")
         dns_servers = dns_raw.get("servers") if isinstance(dns_raw.get("servers"), list) else []
         host_raw = api.get("/api/appliance/networking/dns/hostname")
         hostname = host_raw if isinstance(host_raw, str) else ""
+        combined_status = dns_status
 
     iface_lines = []
     for entry in iface_entries:
@@ -872,14 +889,17 @@ def section_networking(api):
             print(line)
 
     print("<<<vcsa_health_dns:sep(59)>>>")
-    print(
-        "dns;%s;%s;%s"
-        % (
-            sanitize(dns_mode),
-            ",".join(sanitize(entry) for entry in dns_servers if entry),
-            sanitize(hostname),
+    if collected:
+        print(
+            "dns;%s;%s;%s"
+            % (
+                sanitize(dns_mode),
+                ",".join(sanitize(entry) for entry in dns_servers if entry),
+                sanitize(hostname),
+            )
         )
-    )
+    else:
+        print("error;%s" % (combined_status if combined_status is not None else "no response"))
 
     return hostname
 

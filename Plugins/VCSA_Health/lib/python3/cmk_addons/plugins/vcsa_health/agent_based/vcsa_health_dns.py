@@ -12,6 +12,7 @@
 # License: GPL-2.0-only
 #
 # Agent section format (sep 59):
+#   error;<http status>
 #   dns;<mode>;<comma separated servers>;<hostname>
 
 from cmk.agent_based.v2 import (
@@ -28,7 +29,11 @@ from cmk.agent_based.v2 import (
 
 def parse_vcsa_health_dns(string_table):
     for line in string_table:
-        if not line or line[0] != "dns":
+        if not line:
+            continue
+        if line[0] == "error":
+            return {"error": line[1] if len(line) > 1 else "unknown"}
+        if line[0] != "dns":
             continue
         servers = []
         if len(line) > 2 and line[2]:
@@ -54,6 +59,14 @@ def discover_vcsa_health_dns(section) -> DiscoveryResult:
 
 def check_vcsa_health_dns(params, section) -> CheckResult:
     if not section:
+        return
+
+    # A failed lookup must not present as an appliance with no name servers.
+    if "error" in section:
+        yield Result(
+            state=State.UNKNOWN,
+            summary="Unable to retrieve DNS configuration (HTTP %s)" % section["error"],
+        )
         return
 
     servers = section["servers"]

@@ -97,6 +97,8 @@ def check_vcsa_health_perf(item, params, section) -> CheckResult:
         )
 
     used, total = values.get("used"), values.get("total")
+    if item != "Memory":
+        used = total = None
     if used is not None and total is not None and total > 0:
         yield Result(
             state=State.OK,

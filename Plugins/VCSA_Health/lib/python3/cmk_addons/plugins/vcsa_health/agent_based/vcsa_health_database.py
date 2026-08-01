@@ -28,7 +28,6 @@ from cmk.agent_based.v2 import (
     Result,
     Service,
     State,
-    check_levels,
     render,
 )
 
@@ -76,33 +75,37 @@ def check_vcsa_health_database(params, section) -> CheckResult:
     if not section:
         return
 
+    # State and summary are built directly rather than via check_levels, so a
+    # category that breaches its levels is named once in the summary instead of
+    # appearing both as a promoted notice and in the constructed text.
+    overall = State.OK
     summary_parts = []
     for key, (label, metric) in _CATEGORIES.items():
         value = section["util"].get(key)
         if value is None:
             continue
+
         levels = params.get("%s_levels" % key)
-        results = list(
-            check_levels(
-                value,
-                levels_upper=levels,
-                metric_name=metric,
-                label=label,
-                render_func=render.percent,
-                boundaries=(0.0, 100.0),
-                notice_only=True,
-            )
-        )
-        worst = State.OK
-        for item in results:
-            if isinstance(item, Result):
-                worst = State.worst(worst, item.state)
-            yield item
-        marker = "" if worst == State.OK else " (%s)" % worst.name
-        summary_parts.append("%s %s%s" % (label, render.percent(value), marker))
+        state, levels_text, bounds = State.OK, "", None
+        if levels and levels[0] == "fixed":
+            warn, crit = levels[1]
+            bounds = (warn, crit)
+            if value >= crit:
+                state = State.CRIT
+            elif value >= warn:
+                state = State.WARN
+            if state is not State.OK:
+                levels_text = " (warn/crit at %s/%s)" % (
+                    render.percent(warn),
+                    render.percent(crit),
+                )
+
+        overall = State.worst(overall, state)
+        summary_parts.append("%s %s%s" % (label, render.percent(value), levels_text))
+        yield Metric(metric, value, levels=bounds, boundaries=(0.0, 100.0))
 
     if summary_parts:
-        yield Result(state=State.OK, summary=", ".join(summary_parts))
+        yield Result(state=overall, summary=", ".join(summary_parts))
 
     for key, (label, metric) in _TIERS.items():
         value = section["size"].get(key)
