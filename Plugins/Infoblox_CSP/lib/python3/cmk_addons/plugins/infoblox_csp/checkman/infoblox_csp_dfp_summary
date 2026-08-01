@@ -1,0 +1,34 @@
+title: Infoblox: Active DNS Forwarding Proxies
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports every DNS Forwarding Proxy in the tenant in a single service,
+ including how many are actually running. This mirrors the Active DFPs
+ count in the portal dashboard.
+
+ The configuration endpoint on its own cannot say whether a proxy is
+ running, so this check reads both the proxy configurations and the tenant
+ service list and correlates them by host name. A proxy can be fully
+ configured while the DNS Forwarding Proxy service on its server is
+ stopped, and that is the case this catches.
+
+ The service goes to a configurable state, {CRIT} by default, when a
+ configured proxy is not active. If the tenant service list is unavailable,
+ for example because the configuration tier has been disabled, the check
+ reports the configured count and states that the run state is unknown
+ rather than guessing.
+
+ An expected forwarding policy can be asserted across every proxy, so a
+ single misconfigured one is visible rather than averaged away.
+
+ The details cover each proxy in full: its active state, forwarding policy,
+ the security policy it is bound to by name, the service name, the servers
+ it runs on, every resolver with its protocols and whether it is a fallback
+ or a local resolver, operating mode and when that mode started, POP region,
+ dnstap cache logging, counts of internal domain lists and source routes,
+ the internal identifiers, and the creation and last update times.
+
+discovery:
+ One service is created on the tenant host covering all proxies.

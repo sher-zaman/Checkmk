@@ -1,0 +1,15 @@
+title: Infoblox: Update deferrals
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports the maintenance windows configured in the tenant, which govern
+ when Infoblox applies software updates to NIOS-X servers.
+
+ The service is always {OK}. When no windows are configured it states so
+ explicitly, since that means updates are applied automatically whenever
+ Infoblox chooses, which is worth knowing when reading version history.
+
+discovery:
+ One service is created on the tenant host.

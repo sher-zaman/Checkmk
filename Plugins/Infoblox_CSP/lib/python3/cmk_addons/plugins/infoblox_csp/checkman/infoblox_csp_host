@@ -1,0 +1,26 @@
+title: Infoblox: NIOS-X server status
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports the composite status of a NIOS-X server as held by the Infoblox
+ Cloud Services Portal, together with its version, type, size and addresses.
+
+ The service is {OK} while the server reports online, {WARN} when it reports
+ degraded, pending or awaiting approval, and {CRIT} when it reports error or
+ offline. Every mapping is configurable.
+
+ The age of the server's last check-in is reported and can be given levels.
+ The portal does not expose a dedicated last seen field, so the host record
+ update timestamp is used instead. That timestamp is observed to lag by
+ several minutes even on healthy servers, so the levels default to thirty
+ and sixty minutes rather than acting as a heartbeat.
+
+ If the portal reports a service on this server with no service type, the
+ row cannot be given a stable item and is skipped. The count and names of
+ any skipped rows appear here rather than being discarded silently.
+
+discovery:
+ One service is created per NIOS-X server, on the piggyback host
+ representing that server.

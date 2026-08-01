@@ -1,0 +1,35 @@
+title: Infoblox: Service availability by type
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports how many instances of a given service type are online across the
+ whole tenant, as a count and as a percentage. This mirrors the Service
+ Availability tile in the portal dashboard.
+
+ It complements the per server service checks rather than replacing them.
+ Each of those sees a single instance on a single server, so none of them
+ can express that DNS is healthy on one node and down on the other. This
+ check can.
+
+ The service goes to a configurable state, {CRIT} by default, when any
+ instance of the type is not online. Two further conditions are reported:
+ an instance whose desired state disagrees with its actual state, and
+ instances of the same type running different versions.
+
+ The version condition defaults to {OK}. Infoblox applies updates
+ asynchronously, so instances of one type routinely differ for a short
+ window during a rollout.
+
+ The details list every instance of the type with its status, state,
+ version and the server it runs on.
+
+discovery:
+ One service is created per service type present in the tenant, on the
+ tenant host. A type deployed on a server that has no Checkmk host yet is
+ still counted, which is the one thing the per server checks cannot do.
+
+item:
+ The service type as Infoblox names it in the portal, matching the items
+ used by the per server service checks.

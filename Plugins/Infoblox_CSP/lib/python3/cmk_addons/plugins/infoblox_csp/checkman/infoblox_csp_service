@@ -1,0 +1,30 @@
+title: Infoblox: Deployed service status
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports the status of a service deployed on a NIOS-X server, such as DNS,
+ DHCP, DNS Forwarding Proxy, NTP or Data Connector.
+
+ The service is {OK} while the status is started, {WARN} while starting or
+ stopping, and {CRIT} when stopped or in error. Every mapping is
+ configurable.
+
+ The details include the version, the service name as held in the portal,
+ how long the service has been in its current state, and when it was last
+ upgraded. Where the portal supplies an error payload it is decoded and
+ shown, including the failing container name and exit code.
+
+ Versions are reported but never alarmed on, because Infoblox controls
+ service versions and applies updates automatically.
+
+discovery:
+ One service is created for each service deployed on the server.
+
+item:
+ The service type as Infoblox names it in the portal, for example DNS,
+ DHCP, NTP or DNS Forwarding Proxy. A service type unknown to this
+ extension appears as the raw value in upper case. If a server ever reports
+ two services of the same type, every member of that group is suffixed with
+ its service name so that items stay unique and stable.

@@ -1,0 +1,28 @@
+title: Infoblox: DHCP high availability node
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports the role and state of a NIOS-X server within its DHCP high
+ availability group, and the age of the most recent heartbeat from each
+ peer.
+
+ The state values come from the underlying Kea high availability state
+ machine. In hot standby mode both nodes report hot-standby during normal
+ operation, so a passive node reporting it is healthy rather than faulty.
+ The state worth understanding is terminated: high availability has given
+ up, both servers continue answering clients, and their lease databases
+ diverge with nothing visible from the outside. Clock skew above sixty
+ seconds is a common cause, which is why the NTP service on each server is
+ worth watching alongside this check.
+
+ Heartbeat timestamps reported as the epoch zero sentinel, which Infoblox
+ uses to mean not applicable, are ignored rather than counted as decades of
+ staleness. An empty IPv6 state means IPv6 is not configured and is not
+ treated as a failure.
+
+discovery:
+ One service is created per NIOS-X server that belongs to a DHCP high
+ availability group. Group membership is correlated by legacy host
+ identifier.

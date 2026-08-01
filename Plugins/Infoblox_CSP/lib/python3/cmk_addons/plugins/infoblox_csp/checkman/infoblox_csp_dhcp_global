@@ -1,0 +1,16 @@
+title: Infoblox: Global DHCP configuration
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports the tenant wide DHCP configuration, including whether dynamic DNS
+ updates are enabled and any globally configured utilisation thresholds.
+
+ This check reports configuration rather than health and is always {OK}. It
+ exists so that a change to a global setting is visible in the service
+ history.
+
+discovery:
+ One service is created on the tenant host when a global DHCP configuration
+ is present.

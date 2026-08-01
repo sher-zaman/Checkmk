@@ -1,0 +1,30 @@
+title: Infoblox: Subnet utilisation
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports address utilisation for a subnet, using the same metrics and
+ levels as the DHCP range check.
+
+ Two separate level sets are applied. A subnet that contains at least one
+ DHCP range is treated as a pool and gets the pool levels. A subnet with no
+ range inside it is an allocation record, for example an ISP allocation or
+ a NAT entry, and gets the allocation levels, which are unset by default.
+ Such objects are frequently saturated by design, so alarming on their
+ utilisation would produce an alert nobody can clear. Whether a subnet
+ contains a pool is derived from the parent reference on each DHCP range
+ and costs no additional API call.
+
+ The service goes {WARN} when Infoblox itself flags the subnet as likely to
+ run out of addresses.
+
+discovery:
+ Disabled by default. Enable it through the Infoblox subnet and address
+ block discovery rule. DHCP ranges cover where exhaustion actually happens
+ and the IP space check covers the tenant as a whole, so per subnet
+ services are opt in. Subnets appear in the inventory regardless.
+
+item:
+ The subnet address and prefix length, with the name appended in brackets
+ where one is set.

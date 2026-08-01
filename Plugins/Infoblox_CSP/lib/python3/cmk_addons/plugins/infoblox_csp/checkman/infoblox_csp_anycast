@@ -1,0 +1,47 @@
+title: Infoblox: Anycast configuration
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports one anycast configuration: the status Infoblox assigns to it, how
+ many of its member hosts are advertising the anycast route, and the full
+ routing configuration of each member.
+
+ Anycast exists so that losing one advertiser is survivable, so the
+ operational question is how many advertisers remain rather than whether
+ the configuration is nominally healthy. This check counts advertising
+ members itself, because the reported status does not distinguish losing
+ one member from losing all but one. Some but not all members advertising
+ is {WARN} by default, no member advertising is {CRIT}, and a required
+ minimum can be set where a specific number of advertisers is needed to
+ carry the load.
+
+ The reported status is Active, Degraded or Inactive, mapped to {OK},
+ {WARN} and {CRIT} respectively. Any other value is reported as {UNKNOWN}
+ rather than guessed at. A configuration that exists but has not been
+ applied to its hosts is reported separately, since nothing is being
+ advertised in that state.
+
+ The summary carries the service being fronted and the anycast IPv4 and
+ IPv6 addresses. The details list every member host with its status,
+ addresses and identifier, followed by its routing configuration: enabled
+ protocols, local and neighbour BGP autonomous system numbers, neighbour
+ addresses and multihop settings, and OSPF area, interface, cost and
+ timers. Credentials present in that configuration, the BGP neighbour
+ password and the OSPF authentication key, are removed by the agent before
+ the data leaves the API client and never appear here.
+
+ One limit is worth understanding. This reports what Infoblox believes
+ about route advertisement. It does not prove the route reached the
+ upstream router, nor that clients can reach the anycast address. Pairing
+ these checks with an active DNS check against the anycast address, which
+ is shown in the summary for that reason, is what confirms the path end to
+ end.
+
+discovery:
+ One service is created per anycast configuration in the tenant, on the
+ tenant host.
+
+item:
+ The configuration name as set in the portal.

@@ -1,0 +1,15 @@
+title: Infoblox: IP space utilisation
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports address utilisation across an entire IP space, giving a single
+ tenant wide view of address consumption without needing per subnet
+ services.
+
+discovery:
+ One service is created per IP space in the tenant, on the tenant host.
+
+item:
+ The IP space name as configured in the portal.

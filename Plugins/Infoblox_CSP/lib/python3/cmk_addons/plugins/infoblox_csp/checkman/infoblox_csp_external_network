@@ -1,0 +1,26 @@
+title: Infoblox: External networks
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports the public address ranges registered against the tenant as external
+ networks, so that DNS queries arriving from them are attributed to it. This
+ mirrors the External Networks count in the portal dashboard.
+
+ The service goes to a configurable state, {WARN} by default, when any
+ address has an approval status other than AUTO_VERIFIED, VERIFIED or
+ APPROVED. An address whose approval has not completed is registered but is
+ not yet in effect, which is easy to miss.
+
+ An expected minimum network count can also be set, which catches a list
+ being deleted.
+
+ The details list every network list with the security policy it is bound
+ to, and beneath it every address with its description, approval status,
+ who requested it and when, plus the creation and last update times of the
+ list itself.
+
+discovery:
+ One aggregate service is created on the tenant host. Only present when the
+ tenant is licensed for Threat Defense.

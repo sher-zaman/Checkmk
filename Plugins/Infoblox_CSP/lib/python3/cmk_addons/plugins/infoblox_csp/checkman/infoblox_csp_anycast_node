@@ -1,0 +1,33 @@
+title: Infoblox: Anycast node
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports whether one NIOS-X server is advertising the route for one anycast
+ configuration it belongs to.
+
+ A server can be a member of several configurations, for example one
+ fronting DNS and another fronting DNS forwarding, so one service is created
+ per configuration rather than one per server. That way a partial failure on
+ a single server is visible for the affected service only.
+
+ The reported status is Active, Degraded or Inactive, mapped to {OK},
+ {WARN} and {CRIT} respectively, and every mapping is configurable. The
+ status of the configuration as a whole is shown for context and by default
+ does not affect this service, since the tenant level anycast check already
+ alerts on it.
+
+ The details carry this server's routing configuration for the
+ configuration in question: enabled protocols, local and neighbour BGP
+ autonomous system numbers, neighbour addresses and multihop settings, and
+ OSPF area, interface, cost and timers. Credentials are removed by the agent
+ and never appear here.
+
+discovery:
+ One service is created per anycast configuration that the server is a
+ member of, on the piggyback host representing that server. Membership is
+ correlated by the host identifier Infoblox assigns.
+
+item:
+ The anycast configuration name as set in the portal.

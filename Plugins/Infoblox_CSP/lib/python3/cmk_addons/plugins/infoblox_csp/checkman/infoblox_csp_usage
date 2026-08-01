@@ -1,0 +1,28 @@
+title: Infoblox: Peak usage
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports the DNS query rate, DHCP lease rate and IPAM object count for a
+ NIOS-X server, along with its size class.
+
+ These are twenty four hour peak figures recomputed periodically by
+ Infoblox rather than live rates, which is why they are labelled as peaks
+ and why the graphs move in steps rather than continuously. Each figure is
+ accompanied in the details by the highest value Infoblox has recorded and
+ the date it occurred.
+
+ No levels are applied. The portal knows the ceiling for each size class
+ and resizes a server automatically when a peak crosses it, but that
+ ceiling is not returned by the API, so a threshold could only be a raw
+ number entered per site.
+
+ There is no timestamp on the current value, so if Infoblox stopped
+ recomputing it the figure would simply freeze. A flat graph is therefore
+ not proof of a quiet network.
+
+discovery:
+ One service is created per NIOS-X server that reports at least one of the
+ three figures. Servers that report none, such as those running only Data
+ Connector, produce no service rather than one reading zero.

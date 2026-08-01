@@ -1,0 +1,21 @@
+title: Infoblox: Address block utilisation
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports address utilisation for an address block, using the same metrics
+ and levels as the subnet check.
+
+ Address blocks aggregate their child subnets, which in turn aggregate their
+ child ranges. A single pool filling up will therefore alarm as a range, as
+ a subnet and as an address block: three services reporting one cause.
+ Bear that in mind when enabling all three levels of the hierarchy.
+
+discovery:
+ Disabled by default. Enable it through the Infoblox subnet and address
+ block discovery rule.
+
+item:
+ The block address and prefix length, with the name appended in brackets
+ where one is set.

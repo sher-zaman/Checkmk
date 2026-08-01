@@ -1,0 +1,794 @@
+#!/usr/bin/env python3
+"""Checkmk special agent for the Infoblox Cloud Services Portal (CSP).
+
+Queries the CSP REST API and emits one set of sections for the tenant host plus
+a piggyback block per NIOS-X server.
+
+Endpoints are split into two tiers. Tier one carries health state and is fetched
+on every cycle. Tier two carries configuration and inventory, is fetched on a
+TTL, and is emitted with cached section headers so Checkmk reports the data age
+honestly rather than treating stale data as fresh.
+
+Author:   Sher Zaman (sher[at]sherz[dot]dev, https://sherz.dev)
+Website:  https://sherz.dev
+LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+Repo:     https://github.com/sher-zaman/Checkmk
+License:  GPL-2.0-only
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
+
+import requests
+
+VERSION = "1.0.0"
+DEFAULT_BASE_URL = "https://csp.infoblox.com"
+PAGE_SIZE = 500
+MAX_PAGES = 40
+
+# Endpoints fetched every cycle. These carry state that must never be cached.
+TIER1 = [
+    ("detail_hosts", "/api/infra/v1/detail_hosts", {}),
+    ("detail_services", "/api/infra/v1/detail_services", {}),
+    ("ha_group", "/api/ddi/v1/dhcp/ha_group", {"collect_stats": "true"}),
+    ("range", "/api/ddi/v1/ipam/range", {}),
+    ("ip_space", "/api/ddi/v1/ipam/ip_space", {}),
+    ("anycast_runtime", "/api/anycast/v1/accm/ac_runtime_statuses", {}),
+]
+
+# Endpoints fetched on a TTL. Configuration and inventory only.
+TIER2 = [
+    ("hosts", "/api/infra/v1/hosts", {}),
+    ("auth_zone", "/api/ddi/v1/dns/auth_zone", {}),
+    ("dns_view", "/api/ddi/v1/dns/view", {}),
+    ("dns_global", "/api/ddi/v1/dns/global", {}),
+    ("dhcp_global", "/api/ddi/v1/dhcp/global", {}),
+    ("security_policy", "/api/atcfw/v1/security_policies", {}),
+    ("threat_feed", "/api/atcfw/v1/threat_feeds", {}),
+    ("dfp_service", "/api/atcdfp/v1/dfp_services", {}),
+    ("network_list", "/api/atcfw/v1/network_lists", {}),
+    ("anycast_config", "/api/anycast/v1/accm/ac_configs", {}),
+    ("deferral", "/api/upgrade_policy/v2/maintenance_windows", {}),
+    ("subnet", "/api/ddi/v1/ipam/subnet", {}),
+    ("address_block", "/api/ddi/v1/ipam/address_block", {}),
+]
+
+# Host tag keys promoted to Checkmk host labels. Explicit allowlist: tags are
+# user writable, so emitting labels from arbitrary keys is not safe.
+LABEL_TAGS = {
+    "host/cloud_provider": "cloud_provider",
+    "host/deployment_type": "deployment_type",
+    "host/virtualization": "virtualization",
+}
+
+# Tag keys carried into the inventory tree rather than into labels.
+INVENTORY_TAGS = [
+    "host/serial_number",
+    "host/os_version",
+    "host/kernel_version",
+    "host/k8s_version",
+    "host/container_runtime_version",
+    "host/build_version",
+    "host/boot_mode",
+    "host/ipv6_enabled",
+    "host/cloud_provider",
+    "host/deployment_type",
+    "host/virtualization",
+]
+
+
+class CspError(Exception):
+    """Raised when the API cannot be reached or returns an unusable response."""
+
+
+class CspClient:
+    def __init__(self, base_url, api_key, timeout, verify):
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.verify = verify
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Authorization": f"Token {api_key}",
+            "Accept": "application/json",
+            "User-Agent": f"checkmk-agent-infoblox-csp/{VERSION}",
+        })
+
+    def get_records(self, path, params, paginate=True):
+        """GET an endpoint, following offset pagination when appropriate.
+
+        Returns a list of records. Endpoints returning a single object are
+        wrapped in a one element list. A 403 or 404 yields an empty list rather
+        than an error, so a tenant that is not licensed for a service simply
+        produces no services instead of failing the whole agent.
+
+        Set paginate to False for single resource reads. Those document no query
+        parameters, and this API rejects unexpected ones with 400, so sending
+        _limit to them would fail the call.
+        """
+        if not paginate:
+            payload = self._request(path, dict(params))
+            return [] if payload is None else self._extract(payload)
+
+        records = []
+        offset = 0
+
+        for _ in range(MAX_PAGES):
+            query = dict(params)
+            query["_limit"] = str(PAGE_SIZE)
+            if offset:
+                query["_offset"] = str(offset)
+
+            payload = self._request(path, query)
+            if payload is None:
+                return records
+
+            page = self._extract(payload)
+            records.extend(page)
+
+            if len(page) < PAGE_SIZE:
+                return records
+            offset += PAGE_SIZE
+
+        sys.stderr.write(
+            f"Infoblox CSP: {path} returned more than "
+            f"{MAX_PAGES * PAGE_SIZE} records, results are truncated\n"
+        )
+        return records
+
+    def _request(self, path, query):
+        url = f"{self.base_url}{path}"
+        try:
+            # verify is passed per request on purpose: OMD sets REQUESTS_CA_BUNDLE
+            # and SSL_CERT_FILE, which override a session level setting.
+            response = self.session.get(
+                url, params=query, timeout=self.timeout, verify=self.verify
+            )
+        except requests.RequestException as exc:
+            raise CspError(f"{path}: {type(exc).__name__}: {exc}") from exc
+
+        if response.status_code in (403, 404, 501):
+            return None
+        if response.status_code == 401:
+            raise CspError(
+                f"{path}: HTTP 401, the API key is invalid, expired, "
+                "or belongs to a different realm"
+            )
+        if response.status_code >= 400:
+            raise CspError(f"{path}: HTTP {response.status_code}")
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise CspError(f"{path}: response was not JSON") from exc
+
+    @staticmethod
+    def _extract(payload):
+        if isinstance(payload, list):
+            return payload
+        if not isinstance(payload, dict):
+            return []
+        for key in ("results", "result", "items", "data"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+            if isinstance(value, dict):
+                return [value]
+        return []
+
+
+class Cache:
+    """Filesystem cache for tier two endpoints.
+
+    Scoped per tenant. Two special agent rules on one site would otherwise share
+    cache files keyed only by endpoint name, and one tenant would be served the
+    other's DNS zones, policies and threat feeds.
+    """
+
+    def __init__(self, directory, ttl, scope=""):
+        safe_scope = re.sub(r"[^A-Za-z0-9_.-]", "_", str(scope))[:120]
+        self.directory = os.path.join(directory, safe_scope) if safe_scope else directory
+        self.ttl = ttl
+        if self.directory:
+            try:
+                # The scoped subdirectory, not its parent, or every write fails
+                # silently and the cache never takes effect.
+                os.makedirs(self.directory, mode=0o700, exist_ok=True)
+            except OSError:
+                self.directory = None
+
+    def _path(self, key):
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", key)
+        return os.path.join(self.directory, f"{safe}.json")
+
+    def read(self, key, ignore_ttl=False):
+        """Return (records, mtime) if an entry exists, otherwise None.
+
+        ignore_ttl serves the failure path: stale data with an honest timestamp
+        is better than no data, because Checkmk renders the age either way.
+        """
+        if not self.directory or (self.ttl <= 0 and not ignore_ttl):
+            return None
+        path = self._path(key)
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return None
+        if not ignore_ttl and time.time() - mtime > self.ttl:
+            return None
+        try:
+            with open(path, encoding="utf-8") as handle:
+                return json.load(handle), int(mtime)
+        except (OSError, ValueError):
+            return None
+
+    def write(self, key, records):
+        """Persist records and return the write timestamp."""
+        now = int(time.time())
+        if not self.directory:
+            return now
+        path = self._path(key)
+        try:
+            with open(f"{path}.tmp", "w", encoding="utf-8") as handle:
+                json.dump(records, handle)
+            os.replace(f"{path}.tmp", path)
+        except OSError:
+            pass
+        return now
+
+
+def emit(name, payload, cached=None):
+    """Write one agent section holding a single JSON document.
+
+    cached is (timestamp, interval) for tier two sections. Checkmk then knows
+    the data is intentionally aged and marks the service stale if the agent
+    stops refreshing it, rather than showing old data as current.
+    """
+    header = f"infoblox_csp_{name}:sep(0)"
+    if cached:
+        header += f":cached({cached[0]},{cached[1]})"
+    sys.stdout.write(f"<<<{header}>>>\n")
+    sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+
+
+def sanitize_host(name):
+    """Reduce an API display name to something usable as a Checkmk host name."""
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "-", str(name).strip())
+    cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-.")
+    return cleaned
+
+
+def legacy_ref_id(reference):
+    """Pull the trailing numeric id out of a resource reference.
+
+    HA group members are given as dhcp/host/685008 while detail_hosts exposes
+    legacy_id 685008, so this is what correlates the two.
+    """
+    if not isinstance(reference, str):
+        return None
+    match = re.search(r"(\d+)\s*$", reference)
+    return match.group(1) if match else None
+
+
+def build_ha_node_map(ha_groups):
+    """Map legacy host id to that host's role, state and heartbeats."""
+    mapping = {}
+    for group in ha_groups:
+        for member in group.get("hosts") or []:
+            key = legacy_ref_id(member.get("host"))
+            if not key:
+                continue
+            mapping[key] = {
+                "group_name": group.get("name"),
+                "group_status": group.get("status"),
+                "group_status_v6": group.get("status_v6"),
+                "mode": group.get("mode"),
+                "address": member.get("address"),
+                "role": member.get("role"),
+                "state": member.get("state"),
+                "state_v6": member.get("state_v6"),
+                "heartbeats": member.get("heartbeats") or [],
+            }
+    return mapping
+
+
+def pool_parent_ids(ranges):
+    """Subnet ids that contain at least one DHCP range.
+
+    Used to decide default thresholds: an object with no pool is an allocation
+    record and should not alarm on utilisation, because it is saturated by
+    design rather than by consumption.
+    """
+    parents = set()
+    for entry in ranges:
+        parent = entry.get("parent")
+        if isinstance(parent, str) and parent:
+            parents.add(parent)
+    return parents
+
+
+
+# Anycast routing configuration carries credentials: a BGP neighbour password
+# and an OSPF authentication key. Agent output is written to the piggyback cache
+# on disk and rendered in service details, so both are removed before emit. Any
+# future endpoint carrying a secret needs the same treatment.
+SECRET_KEYS = ("password", "authentication_key", "auth_key", "md5_key")
+
+
+def strip_secrets(node):
+    if isinstance(node, dict):
+        for key in list(node):
+            if key in SECRET_KEYS:
+                node[key] = None
+            else:
+                strip_secrets(node[key])
+    elif isinstance(node, list):
+        for item in node:
+            strip_secrets(item)
+    return node
+
+
+def anycast_records(client, runtime, configs):
+    """Merge anycast runtime status with configuration, keyed by config id.
+
+    The list endpoint's schema includes member hosts, but its description claims
+    they are only returned by the per config read. The two contradict, so if a
+    config comes back with no members the single resource is fetched for it.
+    """
+    config_by_id = {}
+    for entry in configs:
+        strip_secrets(entry)
+        if entry.get("id") is not None:
+            config_by_id[entry["id"]] = entry
+
+    merged = []
+    for entry in runtime:
+        config_id = entry.get("id")
+        hosts = entry.get("onprem_hosts") or []
+
+        if not hosts and config_id is not None:
+            single = client.get_records(
+                f"/api/anycast/v1/accm/ac_runtime_statuses/{config_id}",
+                {},
+                paginate=False,
+            )
+            for item in single:
+                if item.get("onprem_hosts"):
+                    hosts = item["onprem_hosts"]
+                    break
+
+        config = config_by_id.get(config_id) or {}
+        config_hosts = {}
+        for host in config.get("onprem_hosts") or []:
+            if isinstance(host, dict) and host.get("id") is not None:
+                config_hosts[host["id"]] = host
+
+        detailed = []
+        for host in hosts:
+            if not isinstance(host, dict):
+                continue
+            extra = config_hosts.get(host.get("id")) or {}
+            detailed.append({
+                "id": host.get("id"),
+                "name": host.get("name") or extra.get("name"),
+                "ophid": host.get("ophid") or extra.get("ophid"),
+                "ip_address": host.get("ip_address") or extra.get("ip_address"),
+                "ipv6_address": host.get("ipv6_address") or extra.get("ipv6_address"),
+                "runtime_status": host.get("runtime_status"),
+                "routing_protocols": extra.get("routing_protocols"),
+                "config_bgp": extra.get("config_bgp"),
+                "config_ospf": extra.get("config_ospf"),
+                "config_ospfv3": extra.get("config_ospfv3"),
+            })
+
+        merged.append({
+            "id": config_id,
+            "name": entry.get("name") or config.get("name"),
+            "service": entry.get("service") or config.get("service"),
+            "runtime_status": entry.get("runtime_status"),
+            "is_configured": entry.get("is_configured"),
+            "anycast_ip_address": (
+                entry.get("anycast_ip_address") or config.get("anycast_ip_address")
+            ),
+            "anycast_ipv6_address": (
+                entry.get("anycast_ipv6_address")
+                or config.get("anycast_ipv6_address")
+            ),
+            "description": config.get("description"),
+            "updated_at": entry.get("updated_at") or config.get("updated_at"),
+            "onprem_hosts": detailed,
+        })
+    return merged
+
+
+def host_summary(host):
+    return {
+        "display_name": host.get("display_name"),
+        "composite_status": host.get("composite_status"),
+        "host_version": host.get("host_version"),
+        "ophid": host.get("ophid"),
+    }
+
+
+def service_rows(host):
+    """Flatten services[] and configs[] into the two section payloads."""
+    services = []
+    for entry in host.get("services") or []:
+        status = entry.get("status") or {}
+        services.append({
+            "service_type": entry.get("service_type"),
+            "service_name": entry.get("service_name"),
+            "service_id": entry.get("service_id"),
+            "current_version": entry.get("current_version"),
+            "upgraded_at": entry.get("upgraded_at"),
+            "status": status.get("status"),
+            "message": status.get("message"),
+            "status_updated_at": status.get("updated_at"),
+        })
+
+    configs = []
+    for entry in host.get("configs") or []:
+        status = entry.get("status") or {}
+        configs.append({
+            "service_type": entry.get("service_type"),
+            "service_name": entry.get("service_name"),
+            "service_id": entry.get("service_id"),
+            "current_version": entry.get("current_version"),
+            "upgraded_at": entry.get("upgraded_at"),
+            "status": status.get("status"),
+            "message": status.get("message"),
+            "status_updated_at": status.get("updated_at"),
+        })
+
+    return services, configs
+
+
+def usage_payload(host):
+    """Return the three usage figures, or None when the host reports none.
+
+    Data Connector hosts return empty objects rather than nulls, so a host with
+    nothing populated should discover no usage service at all instead of one
+    permanently reading zero.
+    """
+    out = {}
+    for field, key in (("qps", "dns_qps"), ("lps", "dhcp_lps"), ("object", "objects")):
+        block = host.get(field)
+        if not isinstance(block, dict) or not block:
+            continue
+        current = block.get("current")
+        if current is None:
+            continue
+        out[key] = {
+            "current": current,
+            "peak": block.get("peak"),
+            "peak_timestamp": block.get("peak_timestamp"),
+        }
+    if not out:
+        return None
+    out["size"] = host.get("size")
+    return out
+
+
+def inventory_payload(host, plain_host):
+    tags = host.get("tags") or {}
+    pool = host.get("pool") or {}
+    data = {
+        "display_name": host.get("display_name"),
+        "ophid": host.get("ophid"),
+        "legacy_id": host.get("legacy_id"),
+        "host_type": host.get("host_type"),
+        "host_subtype": host.get("host_subtype"),
+        "host_version": host.get("host_version"),
+        "size": host.get("size"),
+        "ip_address": host.get("ip_address"),
+        "nat_ip": host.get("nat_ip"),
+        "mac_address": host.get("mac_address"),
+        "ip_space": host.get("ip_space"),
+        "site_id": host.get("site_id"),
+        "timezone": host.get("timezone"),
+        "created_at": host.get("created_at"),
+        "pool_name": pool.get("pool_name"),
+        "template_name": pool.get("template_name") or (plain_host or {}).get("template_name"),
+        "lock_type": pool.get("lock_type") or (plain_host or {}).get("lock_type"),
+    }
+    for key in INVENTORY_TAGS:
+        value = tags.get(key)
+        if value not in (None, ""):
+            data[key.split("/", 1)[1]] = value
+    return data
+
+
+def host_labels(host, services):
+    labels = {}
+    tags = host.get("tags") or {}
+    for tag_key, label_key in LABEL_TAGS.items():
+        value = tags.get(tag_key)
+        if isinstance(value, str) and value.strip():
+            labels[label_key] = value.strip().lower()
+
+    subtype = host.get("host_subtype")
+    if isinstance(subtype, str) and subtype.strip():
+        labels["host_subtype"] = subtype.strip().lower()
+
+    # One key per deployed service type. A single infoblox/service key could
+    # only ever hold one value, so set membership needs separate keys.
+    deployed = sorted({
+        str(row.get("service_type")).strip().lower()
+        for row in services
+        if row.get("service_type")
+    })
+    labels["services"] = deployed
+    return labels
+
+
+def fetch_tier(client, endpoints, cache=None, deadline=None):
+    """Fetch a tier. Returns {key: (records, cached_marker_or_None)}.
+
+    On the configuration tier a failure is contained to the endpoint that caused
+    it, falling back to stale cached data where any exists, so one unreachable
+    endpoint does not discard the whole tier. A deadline bounds the total time,
+    because tolerating per endpoint failures would otherwise let a network
+    partition run the agent past Checkmk's timeout and truncate its output.
+    """
+    out = {}
+    tolerate = cache is not None
+    for key, path, params in endpoints:
+        if deadline is not None and time.time() > deadline:
+            sys.stderr.write(
+                f"Infoblox CSP: time budget exhausted, skipping {key}\n"
+            )
+            continue
+        if cache is not None:
+            hit = cache.read(key)
+            if hit is not None:
+                records, mtime = hit
+                out[key] = (records, (mtime, cache.ttl))
+                continue
+
+        try:
+            records = strip_secrets(client.get_records(path, params))
+        except CspError as exc:
+            if not tolerate:
+                raise
+            sys.stderr.write(f"Infoblox CSP: {exc}\n")
+            stale = cache.read(key, ignore_ttl=True)
+            if stale is not None:
+                records, mtime = stale
+                out[key] = (records, (mtime, cache.ttl))
+            continue
+
+        if cache is not None and cache.ttl > 0:
+            written = cache.write(key, records)
+            out[key] = (records, (written, cache.ttl))
+        else:
+            out[key] = (records, None)
+    return out
+
+
+def main():
+    parser = argparse.ArgumentParser("agent_infoblox_csp")
+    parser.add_argument("--api-key", help="CSP API key")
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL,
+                        help="CSP realm base URL")
+    parser.add_argument("--timeout", type=int, default=30,
+                        help="Per request timeout in seconds")
+    parser.add_argument("--no-cert-check", action="store_true",
+                        help="Do not verify the TLS certificate")
+    parser.add_argument("--host-prefix", default="",
+                        help="Prefix prepended to every piggyback host name")
+    parser.add_argument("--cache-dir", default="",
+                        help="Directory for the configuration tier cache")
+    parser.add_argument("--cache-scope", default="",
+                        help="Identifier isolating this tenant's cache from "
+                             "others on the same site")
+    parser.add_argument("--config-ttl", type=int, default=3600,
+                        help="Configuration tier cache lifetime in seconds")
+    parser.add_argument("--skip-config-tier", action="store_true",
+                        help="Fetch health endpoints only")
+    args = parser.parse_args()
+
+    api_key = args.api_key or os.environ.get("INFOBLOX_CSP_API_KEY")
+    if not api_key:
+        sys.stderr.write("No API key supplied.\n")
+        return 2
+
+    client = CspClient(
+        base_url=args.base_url,
+        api_key=api_key,
+        timeout=args.timeout,
+        verify=not args.no_cert_check,
+    )
+
+    try:
+        tier1 = fetch_tier(client, TIER1)
+    except CspError as exc:
+        sys.stderr.write(f"Infoblox CSP: {exc}\n")
+        return 1
+
+    tier2 = {}
+    if not args.skip_config_tier:
+        cache_dir = args.cache_dir or os.path.join(
+            os.environ.get("OMD_ROOT", "/tmp"), "tmp", "infoblox_csp"
+        )
+        # Scoped by the Checkmk host the agent runs for, so two tenants
+        # monitored from one site never share cached configuration.
+        cache = Cache(cache_dir, args.config_ttl, scope=args.cache_scope)
+        try:
+            tier2 = fetch_tier(
+                client, TIER2, cache=cache,
+                deadline=time.time() + max(15, args.timeout * 2),
+            )
+        except CspError as exc:
+            # A configuration tier failure must not take out health monitoring.
+            sys.stderr.write(f"Infoblox CSP configuration tier: {exc}\n")
+
+    detail_hosts = tier1["detail_hosts"][0]
+    detail_services = tier1["detail_services"][0]
+    ha_groups = tier1["ha_group"][0]
+    ranges = tier1["range"][0]
+    ip_spaces = tier1["ip_space"][0]
+
+    plain_hosts = {}
+    for entry in tier2.get("hosts", ([], None))[0]:
+        if entry.get("ophid"):
+            plain_hosts[entry["ophid"]] = entry
+
+    ha_nodes = build_ha_node_map(ha_groups)
+    parents = pool_parent_ids(ranges)
+
+    # ---- tenant host sections -------------------------------------------
+    emit("hosts_summary", {
+        "hosts": [host_summary(host) for host in detail_hosts],
+    })
+
+    emit("services_summary", {
+        "services": [
+            {
+                "name": svc.get("name"),
+                "service_type": svc.get("service_type"),
+                "composite_status": svc.get("composite_status"),
+                "composite_state": svc.get("composite_state"),
+                "desired_state": svc.get("desired_state"),
+                "current_version": svc.get("current_version"),
+                "desired_version": svc.get("desired_version"),
+                "hosts": [h.get("display_name") for h in (svc.get("hosts") or [])],
+            }
+            for svc in detail_services
+        ],
+    })
+
+    anycast = anycast_records(
+        client,
+        tier1["anycast_runtime"][0],
+        tier2.get("anycast_config", ([], None))[0],
+    )
+    emit("anycast", {"configs": anycast})
+
+    emit("ha_group", {"groups": ha_groups})
+    emit("ip_space", {"spaces": ip_spaces})
+    emit("range", {"ranges": ranges})
+
+    for key, section in (
+        ("subnet", "subnet"),
+        ("address_block", "address_block"),
+    ):
+        records, marker = tier2.get(key, ([], None))
+        emit(section, {"objects": records, "pool_parents": sorted(parents)}, cached=marker)
+
+    # Zones reference their view by resource id. Both endpoints are already
+    # fetched, so resolve the name here rather than showing a UUID in a
+    # service's details.
+    view_names = {}
+    for entry in tier2.get("dns_view", ([], None))[0]:
+        if entry.get("id") and entry.get("name"):
+            view_names[entry["id"]] = entry["name"]
+    if view_names:
+        for zone in tier2.get("auth_zone", ([], None))[0]:
+            name = view_names.get(zone.get("view"))
+            if name:
+                zone["view_name"] = name
+
+    # Network lists and DNS forwarding proxies reference their security policy
+    # by numeric id. The policies are already fetched, so resolve the name here
+    # rather than leaving a bare integer in a service's details.
+    policy_names = {}
+    for entry in tier2.get("security_policy", ([], None))[0]:
+        if entry.get("id") is not None and entry.get("name"):
+            policy_names[entry["id"]] = entry["name"]
+    if policy_names:
+        for key in ("network_list", "dfp_service"):
+            for entry in tier2.get(key, ([], None))[0]:
+                name = policy_names.get(entry.get("policy_id"))
+                if name:
+                    entry["policy_name"] = name
+
+    for key, section in (
+        ("auth_zone", "dns_zones"),
+        ("dns_view", "dns_view"),
+        ("dns_global", "dns_global"),
+        ("dhcp_global", "dhcp_global"),
+        ("security_policy", "security_policy"),
+        ("threat_feed", "threat_feed"),
+        ("dfp_service", "dfp_service"),
+        ("network_list", "external_network"),
+        ("deferral", "deferral"),
+    ):
+        records, marker = tier2.get(key, ([], None))
+        emit(section, {"records": records}, cached=marker)
+
+    # ---- piggyback blocks ------------------------------------------------
+    for host in detail_hosts:
+        name = sanitize_host(host.get("display_name") or "")
+        if not name:
+            continue
+
+        services, configs = service_rows(host)
+        sys.stdout.write(f"<<<<{args.host_prefix}{name}>>>>\n")
+
+        emit("host", {
+            "display_name": host.get("display_name"),
+            "composite_status": host.get("composite_status"),
+            "host_version": host.get("host_version"),
+            "host_type": host.get("host_type"),
+            "host_subtype": host.get("host_subtype"),
+            "size": host.get("size"),
+            "maintenance_mode": host.get("maintenance_mode"),
+            "updated_at": host.get("updated_at"),
+            "ip_address": host.get("ip_address"),
+            "nat_ip": host.get("nat_ip"),
+            "ophid": host.get("ophid"),
+            "legacy_id": host.get("legacy_id"),
+            "labels": host_labels(host, services),
+            "service_count": len(services),
+            "skipped_services": [
+                row.get("service_name") for row in services
+                if not row.get("service_type")
+            ],
+        })
+
+        emit("service", {"rows": services})
+        emit("config", {"rows": configs})
+
+        usage = usage_payload(host)
+        if usage is not None:
+            emit("usage", usage)
+
+        node = ha_nodes.get(str(host.get("legacy_id")))
+        if node:
+            emit("ha_node", node)
+
+        ophid = host.get("ophid")
+        memberships = []
+        for config in anycast:
+            for member in config.get("onprem_hosts") or []:
+                if ophid and member.get("ophid") == ophid:
+                    memberships.append({
+                        "config_id": config.get("id"),
+                        "config_name": config.get("name"),
+                        "service": config.get("service"),
+                        "config_runtime_status": config.get("runtime_status"),
+                        "anycast_ip_address": config.get("anycast_ip_address"),
+                        "anycast_ipv6_address": config.get("anycast_ipv6_address"),
+                        "runtime_status": member.get("runtime_status"),
+                        "routing_protocols": member.get("routing_protocols"),
+                        "config_bgp": member.get("config_bgp"),
+                        "config_ospf": member.get("config_ospf"),
+                        "config_ospfv3": member.get("config_ospfv3"),
+                    })
+        if memberships:
+            emit("anycast_node", {"configs": memberships})
+
+        emit("inventory", inventory_payload(
+            host, plain_hosts.get(host.get("ophid"))
+        ))
+
+        sys.stdout.write("<<<<>>>>\n")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

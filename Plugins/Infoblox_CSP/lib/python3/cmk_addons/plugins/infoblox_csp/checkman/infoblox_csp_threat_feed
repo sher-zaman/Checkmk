@@ -1,0 +1,16 @@
+title: Infoblox: Threat feeds
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports how many threat feeds the tenant subscribes to, how many are
+ legacy feeds, and the distribution of threat levels across them.
+
+ An expected minimum feed count can be set, which catches feeds being
+ removed from a tenant. The state applied to legacy feeds is configurable
+ and defaults to {OK}, since legacy feeds still function.
+
+discovery:
+ One aggregate service is created on the tenant host. Only present when the
+ tenant is licensed for Threat Defense.

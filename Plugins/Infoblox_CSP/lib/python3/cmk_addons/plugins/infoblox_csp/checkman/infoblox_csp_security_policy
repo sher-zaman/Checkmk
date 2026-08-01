@@ -1,0 +1,23 @@
+title: Infoblox: Security policy
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports an Infoblox Threat Defense security policy: its rule count,
+ default action, the protection options enabled on it, how many DNS
+ forwarding proxies are bound to it, and its precedence.
+
+ The expected default action can be asserted, and the check goes to a
+ configurable state when the policy still references legacy threat feeds.
+
+ This endpoint returns configuration rather than health. The health of the
+ DNS Forwarding Proxy itself comes from the per server deployed service
+ check.
+
+discovery:
+ One service is created per security policy in the tenant, on the tenant
+ host. Only present when the tenant is licensed for Threat Defense.
+
+item:
+ The policy name as configured in the portal.

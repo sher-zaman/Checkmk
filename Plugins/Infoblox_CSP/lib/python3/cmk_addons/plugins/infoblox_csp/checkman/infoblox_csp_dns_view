@@ -1,0 +1,18 @@
+title: Infoblox: DNS view configuration
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Asserts that the DNSSEC settings on a DNS view match what you expect,
+ covering DNSSEC itself, validation, and expiry validation.
+
+ Each assertion is optional. An unset assertion reports the current value
+ without judging it, so the check can be used purely for visibility. The
+ state applied on a mismatch is configurable.
+
+discovery:
+ One service is created per DNS view in the tenant, on the tenant host.
+
+item:
+ The view name as configured in the portal.

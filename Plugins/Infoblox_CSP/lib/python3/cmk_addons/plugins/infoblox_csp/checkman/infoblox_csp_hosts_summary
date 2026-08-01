@@ -1,0 +1,15 @@
+title: Infoblox: Tenant host rollup
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports how many NIOS-X servers in the tenant are online out of the total,
+ names any that are not, and lists the distinct versions in use.
+
+ This gives a single service that changes state if any server leaves the
+ online state, which is useful as an overview alongside the per server
+ checks.
+
+discovery:
+ One service is created on the tenant host.

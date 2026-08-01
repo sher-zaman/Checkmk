@@ -1,0 +1,22 @@
+title: Infoblox: DHCP high availability group
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports the status of a DHCP high availability group, the role and state
+ of each member, and the age of the oldest heartbeat across the group.
+
+ Group status and member state mappings are both configurable. Member
+ states are Kea high availability state machine values, described further
+ in the manual page for the per server high availability check.
+
+ An empty IPv6 status means IPv6 is not configured and is not treated as a
+ failure.
+
+discovery:
+ One service is created per high availability group in the tenant, on the
+ tenant host.
+
+item:
+ The group name as configured in the portal.

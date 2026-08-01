@@ -1,0 +1,28 @@
+title: Infoblox: DHCP range utilisation
+agents: infoblox_csp
+catalog: cloud/infoblox
+license: GPLv2
+distribution: mkp
+description:
+ Reports address utilisation for a DHCP range, including used, free,
+ static, dynamic and abandoned counts.
+
+ Levels default to eighty and ninety percent. Lower levels on the absolute
+ free address count are available as well, because a percentage alone
+ treats a hundred address range and a four thousand address range
+ identically. Abandoned addresses have their own threshold, since they
+ indicate address conflicts or misbehaving clients rather than exhaustion.
+
+ The service goes {WARN} if DHCP is disabled on the range, which would
+ otherwise show as a range quietly reading zero percent.
+
+ DHCP ranges are served by the high availability group rather than by an
+ individual server, so these services live on the tenant host and are not
+ affected by a failover.
+
+discovery:
+ One service is created per DHCP range in the tenant.
+
+item:
+ The start and end address of the range. Where the range has a name it is
+ appended in brackets. Most ranges in practice have no name.
