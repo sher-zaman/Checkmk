@@ -43,7 +43,15 @@ VCSA Syslog Forwarding        OK    1 target(s): 10.128.60.249:514 (UDP)
 
 ## Graphing
 
-CPU (utilization + steal), memory (utilization, and used vs total bytes), interfaces (throughput and packet rate as bidirectional graphs, errors/drops together), filesystems, database usage by category and by retention tier, clock drift, and perfometers on certificate validity, root password validity, backup age and update-check age. Services with no metrics: vMon services, health areas, access settings, proxy, pending shutdown, VCHA.
+- **CPU**: utilization and steal.
+- **Memory**: utilization, and used vs total bytes.
+- **Interfaces**: throughput and packet rate as bidirectional graphs, errors and drops together.
+- **Filesystems**: usage.
+- **Database usage**: by category and by retention tier.
+- **Time synchronization**: clock drift.
+- **Perfometers only**: certificate validity, root password validity, backup age and update-check age.
+
+Services with no metrics: vMon services, health areas, access settings, proxy, pending shutdown, VCHA.
 
 ## Data source
 
@@ -75,7 +83,7 @@ This extension supersedes the legacy `vcsa7_health_status` package by Thomas Sie
 
 Each check has a matching ruleset (Setup > Services > Service monitoring rules, under Virtualization): service and health-area state mapping, CPU/memory/steal/page-rate levels, filesystem levels with an archive opt-in, interface link and error/drop levels plus an expected address mode, drift and NTP-reachability states, update staleness, root password and certificate validity levels, backup age, database usage levels (none by default), access/proxy/syslog/shutdown state overrides, and HA/replication overrides. Uptime uses the built-in Uptime ruleset. No configuration is required; every check ships with working defaults.
 
-## Tested against
+## Validated
 
 Validated in multiple production Checkmk environments, covering vCenter Server Appliance 7.0 and 8.0.
 

@@ -2,7 +2,7 @@
 
 Checkmk monitoring extensions and scripts, built and maintained by Sher Zaman.
 
-Each extension is packaged as an MKP and ships with its unpacked source, so the code can be reviewed directly here before installing. All extensions target Checkmk 2.3 and later.
+Each extension is packaged as an MKP and ships with its unpacked source, so the code can be reviewed directly here before installing. All extensions target Checkmk 2.3.0 or later, up to 2.5.
 
 ## Extensions
 
@@ -45,7 +45,7 @@ The unpacked source mirrors the latest version. Earlier `.mkp` files are retaine
 
 `Scripts/` holds standalone PowerShell local checks that predate the packaged extensions, with their documentation under `Scripts/Docs/`. These are being phased out in favour of MKPs.
 
-## Licensing
+## License
 
 Original extensions are GPL-2.0-only. See [LICENSE.md](LICENSE.md).
 
@@ -54,4 +54,7 @@ Extensions forked from other authors' work retain the upstream licence and attri
 ## Author
 
 Sher Zaman
-[sherz.dev](https://sherz.dev) · [LinkedIn](https://www.linkedin.com/in/sher-zaman-95b008114/)
+
+- Email: sher[at]sherz[dot]dev
+- Website: https://sherz.dev
+- LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/

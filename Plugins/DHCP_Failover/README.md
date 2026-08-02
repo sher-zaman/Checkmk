@@ -55,7 +55,7 @@ Details   State: Normal
 
 No ruleset configuration is required. The check ships with working defaults.
 
-## Tested against
+## Validated
 
 Validated in multiple production Checkmk environments, covering load balance and hot standby relationships.
 

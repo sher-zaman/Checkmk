@@ -42,7 +42,11 @@ Infoblox Hosts                                        OK    3 of 3 servers onlin
 
 ## Graphing
 
-Address utilisation and counts per range/subnet/block/IP space. DNS/DHCP/object peaks as separate graphs. Service availability with a perfometer. Anycast and DFP counts. Heartbeat, check-in and state-duration ages.
+- **IPAM**: address utilisation and counts, per range, subnet, block and IP space.
+- **Peaks**: DNS, DHCP and object peaks, each as a separate graph.
+- **Service availability**: with a perfometer.
+- **Anycast and active DFPs**: counts.
+- **DHCP high availability**: heartbeat, check-in and state-duration ages.
 
 ## Data source
 
@@ -70,7 +74,7 @@ Read only is sufficient. Use a dedicated read only or service account rather tha
 
 A ruleset per check under Setup > Services > Service monitoring rules, Applications: status mappings, age and utilisation levels, expected-value assertions, minimum-count thresholds. All ship with working defaults; no configuration is required.
 
-## Tested against
+## Validated
 
 Validated against a production Infoblox CSP tenant covering DNS, DHCP, DFP, NTP, Data Connector and DHCP high availability. Anycast is validated against the documented API schema rather than a live configuration.
 

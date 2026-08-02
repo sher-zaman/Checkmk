@@ -66,7 +66,7 @@ No ruleset configuration is required. The check ships with working defaults.
 
 The check derives the item name from the first space-delimited token of the folder name. A replicated folder whose name contains a space, for example SYSVOL Share, renders with a truncated item. This is an upstream limitation, left unchanged so service item names stay stable.
 
-## Tested against
+## Validated
 
 Validated in multiple production Checkmk environments.
 
@@ -76,7 +76,11 @@ Validated in multiple production Checkmk environments.
 
 ## Author
 
-Sher Zaman, sher[at]sherz[dot]dev, [sherz.dev](https://sherz.dev), [LinkedIn](https://www.linkedin.com/in/sher-zaman-95b008114/)
+Sher Zaman
+
+- Email: sher[at]sherz[dot]dev
+- Website: https://sherz.dev
+- LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
 
 ## License
 

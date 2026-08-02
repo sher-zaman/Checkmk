@@ -88,7 +88,7 @@ Details   All 23 attributes OK
 
 - **Synology SMART attributes**: levels on the five pre-failure counters, per host and per drive, all defaulting to WARN at 1 and CRIT at 10. WARN at 1 is deliberately loud, since the first reallocated or pending sector is the earliest reliable failure signal. Raise the WARN floor on a disk carrying a fixed, non-growing value rather than suppressing the service.
 
-## Tested against
+## Validated
 
 DSM 6.2, 7.0, and 7.1 or later, on DS, RS and FS series units including DX-series expansion enclosures.
 

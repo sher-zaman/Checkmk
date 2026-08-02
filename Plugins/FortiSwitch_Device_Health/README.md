@@ -65,7 +65,7 @@ SFP 4                             OK    RX power: -2.90 dBm, TX power: -2.35 dBm
 
 Chassis temperature is configured through the built-in **Temperature** ruleset.
 
-## Tested against
+## Validated
 
 FortiSwitch OS 7.2 and 7.6, on models 108F, 124E, 124G, 148F, 224E, 248E, 424E, 426E, 448E, 524D, 548D and 1024D, including desktop and rackmount units, stacked core switches, and FortiLink-managed members.
 

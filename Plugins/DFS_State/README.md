@@ -61,7 +61,7 @@ This package uses the same package name and file paths as the upstream `dfs_stat
 
 No ruleset configuration is required. The check ships with working defaults.
 
-## Tested against
+## Validated
 
 Validated in multiple production Checkmk environments.
 
@@ -71,7 +71,11 @@ Validated in multiple production Checkmk environments.
 
 ## Author
 
-Sher Zaman, sher[at]sherz[dot]dev, [sherz.dev](https://sherz.dev), [LinkedIn](https://www.linkedin.com/in/sher-zaman-95b008114/)
+Sher Zaman
+
+- Email: sher[at]sherz[dot]dev
+- Website: https://sherz.dev
+- LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
 
 ## License
 
