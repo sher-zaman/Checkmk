@@ -69,7 +69,7 @@ Where the detection method provides no native timestamp, the modification time o
 
 ## Installation
 
-1. Upload the `.mkp` file via **Setup > Extension Packages** in Checkmk, or place it in `local/` and run `mkp install`.
+1. Upload the `.mkp` file via **Setup > Extension Packages** in Checkmk.
 2. Deploy the agent plugin to the host, either manually into the agent's plugins directory, or by enabling the bakery rule "System Reboot Required (Linux)" and baking a new agent.
 3. Run a service discovery on the host. One service should appear if the agent section is present.
 
