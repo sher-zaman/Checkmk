@@ -105,10 +105,11 @@ Pool capacity uses the built-in Filesystem ruleset and temperature uses the buil
 
 ## Validated
 
-Validated in production Checkmk environments.
+Validated on the Dell PowerVault ME5024 in multiple production Checkmk environments.
 
 ## Version history
 
+- **1.2.2**: fixes a false warning on the system health service where a healthy partner management controller was reported as not operational.
 - **1.2.0**: adds system performance, health alerts, enclosure and supercapacitor checks; snapshot schedules are reported inside each volume's snapshot service, with a separate service only for schedules not tied to a volume; adds volume and disk performance with cache hit ratios and predictive error counters; snapshots now use the array's snapshot objects for accurate timestamps; temperature state now follows the array's own sensor verdict instead of fixed default levels. Service naming improved for temperature sensors, fans, power supplies, connected hosts, controller firmware and system health, so upgrading rediscovers those services under their new names.
 - **1.1.0**: adds host port I/O monitoring (throughput, IOPS, average/read/write response time and queue depth) integrated into the host port service, with optional levels in the host port ruleset.
 - **1.0.0**: initial release. System, controller, firmware, host port, disk group, pool, volume, disk, power supply, fan, temperature, sensor, unwritable cache, snapshot and connected-host checks, with dedicated rulesets and built-in Filesystem and Temperature integration.

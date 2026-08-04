@@ -178,6 +178,28 @@ agent_section_me5_system = AgentSection(
 )
 
 
+def _partner_mc_not_operational(section: Mapping[str, Any]) -> bool:
+    """Whether the partner management controller is reported as not operational.
+
+    The numeric status code for this field is not consistent across firmware
+    revisions and does not follow the convention used by the other objects, so
+    the reported status text is the reliable signal here. Only text that
+    clearly states a problem counts as a fault; anything unrecognised is
+    treated as healthy, because the array already reflects a partner
+    management controller problem in its own overall health verdict.
+    """
+    text = str(section.get("other-MC-status", "")).strip().lower()
+    if text:
+        return any(
+            token in text
+            for token in ("not ", "down", "fail", "absent", "offline", "unavailable")
+        )
+    numeric = _as_int(section.get("other-MC-status-numeric"))
+    if numeric is not None:
+        return numeric not in (0, 1)
+    return False
+
+
 def discover_me5_system(section: Mapping[str, Any]) -> DiscoveryResult:
     if section:
         yield Service()
@@ -189,8 +211,7 @@ def check_me5_system(params: Mapping[str, Any], section: Mapping[str, Any]) -> C
         return
 
     health_numeric = _as_int(section.get("health-numeric"))
-    mc_numeric = _as_int(section.get("other-MC-status-numeric"))
-    mc_bad = mc_numeric is not None and mc_numeric != 0
+    mc_bad = _partner_mc_not_operational(section)
 
     redundancy = section.get("redundancy")
     if isinstance(redundancy, list) and redundancy:
