@@ -7,6 +7,7 @@
 # synology_smart - metrics and graphs
 ###############################################################################
 # Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
 # Email:    sher[at]sherz[dot]dev
 # Website:  https://sherz.dev
 # LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
@@ -72,6 +73,10 @@ graph_synology_smart_errors = Graph(
         "synology_smart_reported_uncorrect",
     ],
     optional=[
+        "synology_smart_reallocated",
+        "synology_smart_pending",
+        "synology_smart_offline_uncorrectable",
+        "synology_smart_udma_crc",
         "synology_smart_reported_uncorrect",
     ],
     minimal_range=MinimalRange(0, 10),

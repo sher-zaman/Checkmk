@@ -9,7 +9,13 @@ description:
  works on DSM 6.2 and later and needs no configuration.
 
  The service goes {CRIT} if DSM reports any SMART attribute with a status
- other than OK.
+ other than OK, with one exception. An attribute DSM reports as
+ In_the_past fell below its threshold at some point in the drive's life
+ and has since recovered. That history is held in the drive and cannot be
+ cleared, so by default it does not affect the service state, though the
+ attribute is still named in the service details every time it is seen.
+ The state used for it, including {WARN} or {CRIT}, can be set with the
+ rule set "Synology SMART attributes".
 
  In addition, the raw values of the pre-failure counters
  Reallocated_Sector_Ct, Current_Pending_Sector, Offline_Uncorrectable,
@@ -30,9 +36,11 @@ description:
 
 item:
  The drive bay as reported by DSM, for example {Disk 1}, {Drive 1} or
- {Drive 2 (DX517-1)} for disks in expansion enclosures. If the SMART table
- and the disk table disagree on the number of disks, the device path (for
- example {/dev/sda}) is used instead.
+ {Drive 2 (DX517-1)} for disks in expansion enclosures. Bays are matched
+ to disks on the slot number encoded in the device name. If a disk cannot
+ be matched to a bay with certainty, the device path (for example
+ {/dev/sda}) is used instead, so a drive is never given the wrong bay
+ label.
 
 discovery:
  One service is created for every disk found in the SMART table.

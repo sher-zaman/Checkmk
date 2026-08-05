@@ -7,6 +7,7 @@
 # synology_smart - Per-disk SMART attribute monitoring for Synology NAS
 ###############################################################################
 # Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
 # Email:    sher[at]sherz[dot]dev
 # Website:  https://sherz.dev
 # LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
@@ -17,10 +18,19 @@
 # (SYNOLOGY-SMART-MIB, .1.3.6.1.4.1.6574.5).
 #
 # - One service per physical disk, named by bay ("SMART Drive 1",
-#   "SMART Drive 2 (DX517-1)") when the disk table and SMART table
-#   agree on disk count; falls back to device path ("SMART /dev/sda")
-#   otherwise.
-# - CRIT if DSM reports any SMART attribute status other than OK.
+#   "SMART Drive 2 (DX517-1)"), matched on the slot number encoded in
+#   the device name, since DSM lists neither the SMART table nor the
+#   disk table in bay order reliably. Falls back to the device path
+#   ("SMART /dev/sda") if the bays cannot be matched with certainty.
+# - Attribute status as reported by DSM: any status other than OK is
+#   CRIT, except In_the_past (the attribute fell below threshold at
+#   some point in the drive's life but is fine now), which defaults
+#   to OK and is configurable to WARN or CRIT.
+#   The wording follows the upstream SMART WHEN_FAILED states, of which
+#   there are three: a failure now, a failure that has since recovered,
+#   and none. DSM reports OK for the last of those. Both the long and
+#   short spellings of the first two are accepted, and any wording that
+#   is not recognised is treated as a failure rather than assumed benign.
 # - Thresholds on the raw value of the pre-failure counters
 #   Reallocated_Sector_Ct, Current_Pending_Sector, Offline_Uncorrectable,
 #   Reported_Uncorrect and UDMA_CRC_Error_Count (default WARN >= 1,
@@ -33,9 +43,15 @@
 # Validated on DSM 6.2, 7.0 and 7.1 or later across DS, RS and FS
 # series units, including DX-series expansion enclosures.
 #
+# 2026-08-04: 1.1.0 historic attribute failures (In_the_past) default to
+#             OK instead of CRIT, state configurable via ruleset;
+#             fixed bay naming on units where DSM lists disks out of bay
+#             order, or has NVMe cache devices in the disk table
 # 2026-07-28: 1.0.1 author metadata update
 # 2026-07-15: 1.0.0 initial release
 ###############################################################################
+
+import re
 
 from cmk.agent_based.v2 import (
     CheckPlugin,
@@ -70,16 +86,148 @@ _METRIC_NAMES = {
 }
 
 
+def _normalise_status(status):
+    return status.strip().upper().replace(" ", "_").replace("-", "_")
+
+
+# Values that mean "not failing". DSM reports OK, which is where smartctl
+# prints a dash for an attribute that has never failed, has no threshold,
+# or has no valid normalised value. The dash and empty strings are accepted
+# too, in case a DSM build passes the upstream wording through unchanged.
+_HEALTHY_STATUSES = frozenset({"", "OK", "_"})
+
+# Wording for a failure that has since recovered. smartmontools prints
+# In_the_past in full output and Past in brief output; DSM is known to use
+# the full form. A failure happening now needs no set of its own, since it
+# resolves to CRIT along with every other unrecognised value.
+_HISTORIC_STATUSES = frozenset({"IN_THE_PAST", "PAST", "FAILED_PAST"})
+
+
+def _is_healthy(status):
+    return _normalise_status(status) in _HEALTHY_STATUSES
+
+
+def _status_state(status, historic_state):
+    """Map a DSM attribute status onto a monitoring state.
+
+    A failure that has since recovered is history rather than a current
+    fault, so its state is configurable. A failure happening now, and any
+    wording that is not recognised, is CRIT: DSM does not document the set
+    of values this field can take, so an unknown value is treated as a
+    fault rather than assumed benign.
+    """
+    norm = _normalise_status(status)
+    if norm in _HISTORIC_STATUSES:
+        return historic_state
+    return State.CRIT
+
+
+def _device_sort_key(devname):
+    """Natural sort key, so sata2 precedes sata10 and sda precedes sdfa.
+
+    DSM does not always list disks in the SMART table in bay order, but
+    device names are assigned by bay, so sorting on them restores it.
+    """
+    parts = re.split(r"(\d+)", devname)
+    return [int(p) if p.isdigit() else p for p in parts]
+
+
+def _parse_device(devname):
+    """Map a device path to (enclosure key, slot number), or None.
+
+    Synology encodes the physical slot in the device name: sata4 and sas4
+    are slot 4, sdd is the fourth internal disk, and a two letter suffix
+    such as sdfc is slot 3 of an expansion enclosure, where the first
+    letter identifies which enclosure. NVMe devices are cache slots.
+    """
+    name = devname.rsplit("/", 1)[-1]
+    match = re.fullmatch(r"(?:sata|sas|hd)(\d+)", name)
+    if match:
+        return ("internal", int(match.group(1)))
+    match = re.fullmatch(r"nvme(\d+)n\d+", name)
+    if match:
+        return ("cache", int(match.group(1)) + 1)
+    match = re.fullmatch(r"sd([a-z])", name)
+    if match:
+        return ("internal", ord(match.group(1)) - ord("a") + 1)
+    match = re.fullmatch(r"sd([a-z])([a-z])", name)
+    if match:
+        return ("expansion:" + match.group(1), ord(match.group(2)) - ord("a") + 1)
+    return None
+
+
+def _parse_bay(bay_name):
+    """Map a disk table entry to (enclosure key, slot number), or None.
+
+    Handles "Disk 4", "Drive 4", "Drive 3 (DX517-1)" and "Cache device 1".
+    The enclosure ordinal in brackets is kept, so a second expansion unit
+    stays distinct from the first.
+    """
+    name = bay_name.strip()
+    match = re.fullmatch(r"Cache device\s+(\d+)", name, re.IGNORECASE)
+    if match:
+        return ("cache", int(match.group(1)))
+    match = re.fullmatch(r"(?:Disk|Drive)\s+(\d+)", name, re.IGNORECASE)
+    if match:
+        return ("internal", int(match.group(1)))
+    match = re.fullmatch(r"(?:Disk|Drive)\s+(\d+)\s*\(\S+?-(\d+)\)", name, re.IGNORECASE)
+    if match:
+        return ("expansion", int(match.group(2)), int(match.group(1)))
+    return None
+
+
+def _pair_bays_with_devices(devnames, bay_names):
+    """Map bay name -> device name, or None if it cannot be done safely.
+
+    Matching is on the slot numbers encoded in both names rather than on
+    table order, because DSM lists neither table in bay order reliably.
+    Expansion enclosures are matched by ordinal: the lowest device letter
+    group is the first enclosure. A pairing is only returned when every
+    disk with SMART data maps to exactly one bay, so a wrong drive label
+    is never invented.
+    """
+    devices = {}
+    for devname in devnames:
+        parsed = _parse_device(devname)
+        if parsed is None:
+            return None
+        devices[parsed] = devname
+
+    # Expansion enclosures are keyed by device letter, which varies with
+    # how many internal disks precede them. Rank them to get ordinals.
+    letters = sorted({key[0] for key in devices if key[0].startswith("expansion:")})
+    ordinals = {letter: index for index, letter in enumerate(letters, start=1)}
+    normalised = {}
+    for (enclosure, slot), devname in devices.items():
+        if enclosure.startswith("expansion:"):
+            normalised[("expansion", ordinals[enclosure], slot)] = devname
+        else:
+            normalised[(enclosure, slot)] = devname
+
+    pairs = {}
+    for bay_name in bay_names:
+        key = _parse_bay(bay_name)
+        if key is None or key not in normalised:
+            continue
+        if bay_name in pairs:
+            return None
+        pairs[bay_name] = normalised[key]
+
+    # Every disk reporting SMART data must have been claimed exactly once.
+    if sorted(pairs.values()) != sorted(devnames):
+        return None
+    return pairs
+
+
 def parse_synology_smart(string_table):
     """Build {item: {"device": devname, "attributes": {name: {...}}}}.
 
     string_table[0]: SMART table rows [devname, attrname, current, worst,
                      threshold, raw, status]
-    string_table[1]: disk table rows [bay name], index order = bay order
+    string_table[1]: disk table rows [bay name]
     """
     smart_rows, disk_rows = string_table
 
-    # Group SMART rows per device, keeping first-appearance order.
     devices = {}
     for row in smart_rows:
         if len(row) < 7:
@@ -99,19 +247,16 @@ def parse_synology_smart(string_table):
         }
 
     bay_names = [row[0].strip() for row in disk_rows if row and row[0].strip()]
+    devnames = sorted(devices, key=_device_sort_key)
 
-    section = {}
-    devnames = list(devices)
-    if len(bay_names) == len(devnames) and len(set(bay_names)) == len(bay_names):
-        # Positional correlation: SMART devices in first-appearance
-        # order match disk table bays in index order.
-        for devname, bay in zip(devnames, bay_names):
-            section[bay] = {"device": devname, "attributes": devices[devname]}
-    else:
+    pairs = _pair_bays_with_devices(devnames, bay_names)
+    if pairs is None:
         # Fallback: name services by device path.
-        for devname in devnames:
-            section[devname] = {"device": devname, "attributes": devices[devname]}
-    return section
+        return {d: {"device": d, "attributes": devices[d]} for d in devnames}
+    return {
+        bay: {"device": devname, "attributes": devices[devname]}
+        for bay, devname in pairs.items()
+    }
 
 
 def discover_synology_smart(section):
@@ -127,23 +272,29 @@ def check_synology_smart(item, params, section):
     attributes = data["attributes"]
     device = data["device"]
 
-    # 1) DSM-reported per-attribute status
-    failed = [
-        (name, attr["status"])
-        for name, attr in attributes.items()
-        if attr["status"].upper() != "OK"
-    ]
-    if failed:
-        for name, status in failed:
-            yield Result(
-                state=State.CRIT,
-                summary=f"{name} status: {status}",
-            )
-    else:
+    # 1) Attribute status as reported by DSM. A historic failure is
+    #    named here and always visible in the details, but only
+    #    changes the service state if a rule asks for that.
+    historic_state = State(params.get("historic_failure_state", State.OK.value))
+
+    flagged = []
+    for name, attr in sorted(attributes.items()):
+        if _is_healthy(attr["status"]):
+            continue
+        flagged.append((name, attr["status"], _status_state(attr["status"], historic_state)))
+
+    if not flagged:
         yield Result(
             state=State.OK,
             summary=f"All {len(attributes)} attributes OK",
         )
+    else:
+        yield Result(
+            state=State.OK,
+            summary=f"{len(attributes) - len(flagged)} of {len(attributes)} attributes OK",
+        )
+        for name, status, state in flagged:
+            yield Result(state=state, notice=f"{name} status: {status}")
 
     yield Result(state=State.OK, summary=f"Device: {device}")
 
@@ -231,6 +382,7 @@ check_plugin_synology_smart = CheckPlugin(
     discovery_function=discover_synology_smart,
     check_function=check_synology_smart,
     check_default_parameters={
+        "historic_failure_state": 0,  # OK
         "reallocated": ("fixed", (1, 10)),
         "pending": ("fixed", (1, 10)),
         "offline_uncorrectable": ("fixed", (1, 10)),

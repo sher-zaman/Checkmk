@@ -4,13 +4,13 @@ Checkmk extension for monitoring per-disk SMART attributes on Synology NAS units
 
 ## Why this exists
 
-DSM only populates the disk health field from version 7.1 onwards, so on earlier releases the built-in disk check reports "Health: Not provided" and there is no per-disk health data at all. The SMART attribute table is populated on DSM 6.2 as well, making it the only reliable source of disk health across a mixed fleet.
+DSM only populates the disk health field from version 7.1 onwards, so earlier releases show "Health: Not provided" with no per-disk data at all. The SMART attribute table is populated from DSM 6.2, making it the only reliable health source across a mixed fleet. State comes from DSM's own per-attribute verdict on raw values, so a disk is flagged on its first reallocated or pending sector rather than when a normalised score finally drops.
 
 ## What it monitors
 
-- **SMART Disk n** or **SMART Drive n**: the status DSM reports for every SMART attribute, CRIT if any attribute reports other than OK, naming the attribute that failed. Raw values of `Reallocated_Sector_Ct`, `Current_Pending_Sector`, `Offline_Uncorrectable`, `Reported_Uncorrect` and `UDMA_CRC_Error_Count` are checked with default levels of WARN at 1 and CRIT at 10, so a disk is flagged on its first bad sector rather than when the vendor's normalised score drops. Power-on time and the full attribute table go to the service details.
+- **SMART Disk n** or **SMART Drive n**: the status DSM reports for every SMART attribute on the disk, CRIT on any status other than OK. One exception: an attribute that failed at some point and has since recovered stays OK by default but is always named in the details. Pre-failure counters are checked against configurable levels, power-on time is reported informationally, and the full attribute table is written to the details.
 
-One service per physical disk, named by drive bay. Attribute sets vary by drive model, so each counter is evaluated only on disks that report it. Disk temperature is left to the built-in Synology disk check.
+One service per physical disk, named by drive bay including DX-series expansion enclosures, matched on the slot number in the device name since DSM doesn't list either table in bay order reliably; falls back to the device path if a match isn't certain. Attribute sets vary by vendor, so a counter is only evaluated when present. Temperature is intentionally skipped, since the built-in disk check covers it. No ruleset configuration required.
 
 ## Example services
 
@@ -18,10 +18,11 @@ Discovery on a unit with a DX517 expansion enclosure attached:
 
 ```
 SMART Disk 1                      OK    All 23 attributes OK, Device: /dev/sda
-SMART Disk 2                      OK    All 23 attributes OK, Device: /dev/sdb
+SMART Disk 3                      OK    All 23 attributes OK, Device: /dev/sdc
 SMART Disk 6                      OK    All 23 attributes OK, Device: /dev/sdf
 SMART Disk 1 (DX517-1)            OK    All 23 attributes OK, Device: /dev/sdga
 SMART Disk 5 (DX517-1)            OK    All 23 attributes OK, Device: /dev/sdge
+SMART Disk 2                      WARN  Airflow_Temperature_Cel status: In_the_past
 SMART Disk 12                     CRIT  Reallocated_Sector_Ct: 33 (warn/crit at 1/10)
 ```
 
@@ -76,17 +77,19 @@ Details   All 23 attributes OK
 
 - Checkmk 2.3.0 or later, up to 2.5
 - Synology DSM 6.2 or later
-- SNMP enabled on the NAS
+- SNMP enabled on the NAS, v2c or v3
+- No additional MIBs required on the Checkmk server
 
 ## Installation
 
 1. Install the package via **Setup > Extension packages > Upload package**.
-
 2. Run a service discovery on the host. Services appear based on what the device actually reports, so no manual disk selection is required.
 
 ## Configuration
 
-- **Synology SMART attributes**: levels on the five pre-failure counters, per host and per drive, all defaulting to WARN at 1 and CRIT at 10. WARN at 1 is deliberately loud, since the first reallocated or pending sector is the earliest reliable failure signal. Raise the WARN floor on a disk carrying a fixed, non-growing value rather than suppressing the service.
+- **Synology SMART attributes**: levels on the five pre-failure counters, per host and per drive, all defaulting to WARN at 1 and CRIT at 10, plus the state for an attribute that failed in the past, default OK. WARN at 1 is deliberately loud, since the first reallocated or pending sector is the earliest reliable failure signal. Raise the WARN floor on a disk carrying a fixed, non-growing value rather than suppressing the service. A historic failure defaults to OK because it is held in the drive and cannot be cleared, but it is always named in the service details, and the rule can raise it to WARN or CRIT to be notified of it instead.
+
+No ruleset configuration is required. Every check ships with working defaults.
 
 ## Validated
 
@@ -94,16 +97,13 @@ DSM 6.2, 7.0, and 7.1 or later, on DS, RS and FS series units including DX-serie
 
 ## Version history
 
+- **1.1.0**: attributes reported as having failed in the past no longer affect the service state by default, but remain visible in the service details, with the state configurable in the ruleset. Corrected drive bay naming on units where DSM does not list disks in bay order, or has NVMe cache devices in the disk table, which changes service names on those hosts and requires a rediscovery
 - **1.0.1**: author metadata update
 - **1.0.0**: initial release, per-disk SMART health with bay-correlated service names, pre-failure counter levels with a dedicated ruleset, error counter and power-on time metrics
 
 ## Author
 
-Sher Zaman
-
-- Email: sher[at]sherz[dot]dev
-- Website: https://sherz.dev
-- LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+Sher Zaman, sher[at]sherz[dot]dev, [sherz.dev](https://sherz.dev), [LinkedIn](https://www.linkedin.com/in/sher-zaman-95b008114/)
 
 ## License
 
