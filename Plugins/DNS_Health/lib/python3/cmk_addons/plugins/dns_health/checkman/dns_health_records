@@ -1,0 +1,54 @@
+title: DNS health: record drift
+agents: dns_health
+catalog: app/dns_health
+license: GPL-2.0-only
+distribution:
+description:
+ This check compares a domain's DNS records against a baseline and reports what
+ changed, collected by the {dns_health} special agent. One service is created
+ per monitored record type.
+
+ Records are read from the domain's authoritative nameservers rather than from a
+ caching resolver, so the check reports what the domain publishes rather than
+ what a local cache happens to hold. The nameserver list comes from the parent
+ zone's delegation, not from the domain's own NS records, so an altered NS record
+ cannot redirect the check to servers of its own choosing. Every nameserver is
+ queried and the answer they agree on is used, which prevents a single briefly
+ stale server from being reported as a change.
+
+ On the first run the current values are recorded as the baseline and the service
+ reports {OK}, stating explicitly that a baseline was recorded. A baseline being
+ re-recorded, after a host is rebuilt for example, is therefore visible in the
+ service history rather than silent. Later runs report only the differences,
+ as added and removed entries, never the whole record set.
+
+ A detected change holds the old baseline and keeps alarming for a configurable
+ period, seven days by default, after which the new values are accepted and the
+ service returns to {OK}. If the change is reverted during that period the
+ service returns to {OK} on its own. The state for a change is configurable per
+ record type; {NS} defaults to {CRIT} and every other type to {WARN}.
+
+ Records that existed and have disappeared entirely are reported {CRIT}
+ independently of the per-type setting. {NXDOMAIN} where a baseline existed is
+ also {CRIT}, and disagreement between authoritative servers is {WARN}; both are
+ live conditions that keep alarming for as long as they last and are not subject
+ to the acceptance period, since there is no new value to accept.
+
+ A server that cannot be reached is reported {UNKNOWN} and the baseline is left
+ untouched, so an unreachable nameserver can never overwrite a known-good
+ baseline with nothing.
+
+ For {SOA} the serial is masked by default and every other field compared, since
+ the serial increments on every zone edit and its format differs between
+ providers. For {TXT} the character strings of each record are joined before
+ comparison, because a record longer than 255 bytes is split on the wire at a
+ point that moves whenever the record's length changes.
+
+ All states and the acceptance period are configurable via the rule
+ "DNS record drift".
+
+item:
+ The DNS record type, for example {A}, {MX} or {TXT}.
+
+discovery:
+ One service is created for each record type selected in the rule "DNS Health".

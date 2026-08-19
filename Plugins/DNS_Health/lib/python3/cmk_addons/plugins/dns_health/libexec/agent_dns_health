@@ -1,0 +1,512 @@
+#!/usr/bin/env python3
+# Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
+# Email:    sher[at]sherz[dot]dev
+# Website:  https://sherz.dev
+# LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
+# Repo:     https://github.com/sher-zaman/Checkmk
+#
+# Collector only. It queries DNS and emits sections. It holds no state,
+# performs no baseline comparison, and decides no service states. All of
+# that belongs to the check plugins, which have the value store.
+#
+# Nameserver discovery deliberately starts at the parent delegation rather
+# than the zone's own NS records. Taking the server list from the zone would
+# mean trusting the thing being monitored: if the NS records were altered,
+# the agent would query the new servers and report agreement. The parent
+# delegation sits behind registrar access, so it is used as the anchor, and
+# any movement in it is itself reported.
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from typing import Any
+
+try:
+    import dns.exception
+    import dns.flags
+    import dns.message
+    import dns.name
+    import dns.query
+    import dns.rcode
+    import dns.rdatatype
+    import dns.resolver
+except ImportError:
+    sys.stderr.write(
+        "dnspython is required and was not found in this interpreter. "
+        "It ships with Checkmk 2.4 and later; this agent requires 2.4.0 or newer.\n"
+    )
+    sys.exit(1)
+
+SCHEMA = 1
+DEFAULT_TYPES = ["A", "AAAA", "MX", "TXT", "NS", "SOA"]
+
+
+class Deadline:
+    """Global time budget. Checkmk's agent timeout defaults to 60 seconds, so
+    the agent must give up and emit partial data rather than be killed with
+    no output at all."""
+
+    def __init__(self, budget: float) -> None:
+        self._end = time.monotonic() + budget
+
+    def remaining(self) -> float:
+        return max(0.0, self._end - time.monotonic())
+
+    def expired(self) -> bool:
+        return self.remaining() <= 0.0
+
+
+def _escape_control(s: str) -> str:
+    """Keep control characters visible and on one line. A stray newline inside
+    a TXT record would otherwise break the service output, and silently
+    dropping it would hide a real zone defect."""
+    for ch, esc in (("\\", "\\\\"), ("\n", "\\n"), ("\r", "\\r"), ("\t", "\\t")):
+        s = s.replace(ch, esc)
+    return s
+
+
+def _rdata_list(rrset: Any) -> list[str]:
+    """TXT needs special handling. A TXT record longer than 255 bytes is split
+    into several character-strings on the wire, and dnspython's to_text()
+    renders each one separately in quotes. That split point is a wire-format
+    detail, not zone content: edit the record's length and the boundary moves,
+    so a diff would show the whole value changing when only part of it did.
+    Joining the strings gives the logical value the zone owner actually set,
+    which is the thing worth comparing."""
+    if rrset is None:
+        return []
+    out: list[str] = []
+    for r in rrset:
+        if rrset.rdtype == dns.rdatatype.TXT:
+            joined = b"".join(r.strings).decode("utf-8", "backslashreplace")
+            out.append(_escape_control(joined))
+        else:
+            out.append(r.to_text())
+    return sorted(out)
+
+
+def _parse_soa(text: str) -> dict[str, Any] | None:
+    """SOA is pre-parsed so the check can compare every field except the
+    serial. Serial formats vary by provider, counter style on some, date
+    style on others, so it is treated as an opaque integer and never
+    interpreted."""
+    parts = text.split()
+    if len(parts) < 7:
+        return None
+    try:
+        return {
+            "mname": parts[0],
+            "rname": parts[1],
+            "serial": int(parts[2]),
+            "refresh": int(parts[3]),
+            "retry": int(parts[4]),
+            "expire": int(parts[5]),
+            "minimum": int(parts[6]),
+        }
+    except ValueError:
+        return None
+
+
+def query_direct(
+    qname: str,
+    rdtype: str,
+    server: str,
+    timeout: float,
+    recursive: bool = False,
+    retries: int = 2,
+) -> dict[str, Any]:
+    """One query against one specific server. Returns a result dict and never
+    raises. Timeouts are reported as transport errors, which is a different
+    thing from a valid DNS error response and must not be conflated: an
+    unreachable server is a measurement failure, NXDOMAIN is a finding."""
+    out: dict[str, Any] = {
+        "rcode": None,
+        "ttl": None,
+        "records": [],
+        "elapsed_ms": None,
+        "error": None,
+        "authoritative": None,
+        "truncated": False,
+    }
+
+    try:
+        rdt = dns.rdatatype.from_text(rdtype)
+    except Exception:
+        out["error"] = f"unknown record type {rdtype}"
+        return out
+
+    attempt = 0
+    last_err = None
+    while attempt <= retries:
+        attempt += 1
+        t0 = time.monotonic()
+        try:
+            # Without EDNS the UDP payload limit is 512 bytes, which truncates
+            # any domain with more than a handful of TXT records and forces an
+            # unnecessary TCP round trip on every single run.
+            msg = dns.message.make_query(qname, rdt, use_edns=0, payload=4096)
+            if not recursive:
+                msg.flags &= ~dns.flags.RD
+            resp = dns.query.udp(msg, server, timeout=timeout)
+
+            # Retry over TCP when the answer did not fit in a UDP packet.
+            # Large TXT sets hit this routinely.
+            if resp.flags & dns.flags.TC:
+                out["truncated"] = True
+                resp = dns.query.tcp(msg, server, timeout=timeout)
+
+            out["elapsed_ms"] = int((time.monotonic() - t0) * 1000)
+            out["rcode"] = dns.rcode.to_text(resp.rcode())
+            out["authoritative"] = bool(resp.flags & dns.flags.AA)
+
+            for rrset in resp.answer:
+                if rrset.rdtype == rdt:
+                    out["ttl"] = rrset.ttl
+                    out["records"] = _rdata_list(rrset)
+                    break
+            return out
+
+        except (dns.exception.Timeout, OSError) as e:
+            last_err = f"{type(e).__name__}: {e}"
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            break
+
+    out["error"] = last_err or "query failed"
+    out["elapsed_ms"] = int((time.monotonic() - t0) * 1000)
+    return out
+
+
+def find_parent_zone(domain: str) -> tuple[str | None, str | None]:
+    """The delegating zone is not simply the domain minus its first label.
+    Walk upward until a zone answers authoritatively for SOA."""
+    try:
+        name = dns.name.from_text(domain)
+        zone = dns.resolver.zone_for_name(name)
+        parent = zone.parent()
+        return zone.to_text(), parent.to_text()
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def get_parent_delegation(
+    domain: str, parent_zone: str, timeout: float, retries: int
+) -> dict[str, Any]:
+    """Ask a nameserver of the parent zone for our delegation. The NS records
+    come back in the authority section of a referral, and the glue addresses
+    in the additional section, so one query yields both."""
+    result: dict[str, Any] = {
+        "parent_zone": parent_zone,
+        "parent_ns": [],
+        "glue": {},
+        "queried_server": None,
+        "error": None,
+    }
+
+    try:
+        parent_ns_names = [
+            r.to_text() for r in dns.resolver.resolve(parent_zone, "NS").rrset
+        ]
+    except Exception as e:
+        result["error"] = f"could not resolve nameservers of {parent_zone}: {e}"
+        return result
+
+    for ns_name in sorted(parent_ns_names):
+        try:
+            addrs = [r.to_text() for r in dns.resolver.resolve(ns_name, "A").rrset]
+        except Exception:
+            continue
+        if not addrs:
+            continue
+
+        server = addrs[0]
+        try:
+            msg = dns.message.make_query(domain, dns.rdatatype.NS)
+            msg.flags &= ~dns.flags.RD
+            resp = dns.query.udp(msg, server, timeout=timeout)
+            if resp.flags & dns.flags.TC:
+                resp = dns.query.tcp(msg, server, timeout=timeout)
+        except Exception as e:
+            result["error"] = f"{type(e).__name__}: {e}"
+            continue
+
+        # A referral carries NS in authority. Some parents answer in the
+        # answer section instead, so both are checked.
+        ns_names: list[str] = []
+        for section in (resp.authority, resp.answer):
+            for rrset in section:
+                if rrset.rdtype == dns.rdatatype.NS:
+                    ns_names.extend(r.to_text() for r in rrset)
+            if ns_names:
+                break
+
+        glue: dict[str, list[str]] = {}
+        for rrset in resp.additional:
+            if rrset.rdtype in (dns.rdatatype.A, dns.rdatatype.AAAA):
+                key = rrset.name.to_text()
+                glue.setdefault(key, []).extend(r.to_text() for r in rrset)
+
+        if ns_names:
+            result["parent_ns"] = sorted(set(ns_names))
+            result["glue"] = {k: sorted(set(v)) for k, v in glue.items()}
+            result["queried_server"] = ns_name
+            result["error"] = None
+            return result
+
+    if not result["error"]:
+        result["error"] = "no parent nameserver returned a delegation"
+    return result
+
+
+def query_addresses(
+    ns_names: list[str], glue: dict[str, list[str]]
+) -> dict[str, list[str]]:
+    """Addresses used to actually send queries. Glue is preferred because it is
+    what a real resolver would follow. Used for querying only, never for the
+    glue comparison."""
+    addrs: dict[str, list[str]] = {}
+    for ns in ns_names:
+        found = glue.get(ns) or glue.get(ns.rstrip(".") + ".") or []
+        v4 = sorted(a for a in found if ":" not in a)
+        if not v4:
+            v4 = independent_addresses(ns)
+        if v4:
+            addrs[ns] = v4
+    return addrs
+
+
+def independent_addresses(ns: str) -> list[str]:
+    """Resolve the nameserver name through the normal recursive path, with no
+    reference to the parent's glue.
+
+    This separation is the entire point of the glue check. Taking the addresses
+    from the glue and then comparing them against the glue can only ever agree,
+    so the check has to resolve the name independently to have anything to
+    compare."""
+    try:
+        return sorted(r.to_text() for r in dns.resolver.resolve(ns, "A").rrset)
+    except Exception:
+        return []
+
+
+def collect_records(
+    domain: str,
+    rtypes: list[str],
+    servers: dict[str, str],
+    timeout: float,
+    retries: int,
+    recursive: bool,
+    deadline: Deadline,
+) -> dict[str, Any]:
+    """Query every server for every type. Comparing servers is what makes
+    drift reliable: if one server is briefly stale and it is the only one
+    asked, the plugin reports a change that never happened."""
+    types_out: dict[str, Any] = {}
+
+    for rtype in rtypes:
+        per_server: dict[str, Any] = {}
+        for label, addr in servers.items():
+            if deadline.expired():
+                per_server[label] = {
+                    "rcode": None,
+                    "records": [],
+                    "error": "global deadline reached before query",
+                    "ttl": None,
+                    "elapsed_ms": None,
+                    "authoritative": None,
+                    "truncated": False,
+                }
+                continue
+            q = min(timeout, max(1.0, deadline.remaining()))
+            per_server[label] = query_direct(
+                domain, rtype, addr, q, recursive=recursive, retries=retries
+            )
+
+        answered = {
+            lbl: tuple(r["records"])
+            for lbl, r in per_server.items()
+            if r["error"] is None and r["rcode"] is not None
+        }
+        distinct = set(answered.values())
+
+        agreed: list[str] | None
+        if len(distinct) == 1:
+            agreed = sorted(next(iter(distinct)))
+            diverged = False
+        elif len(distinct) == 0:
+            agreed = None
+            diverged = False
+        else:
+            # Servers disagree. The check must hold its baseline rather than
+            # re-record, otherwise it flaps between the two answers.
+            agreed = None
+            diverged = True
+
+        rcodes = {r["rcode"] for r in per_server.values() if r["rcode"]}
+        ttls = [r["ttl"] for r in per_server.values() if r["ttl"] is not None]
+
+        entry: dict[str, Any] = {
+            "agreed": agreed,
+            "diverged": diverged,
+            # Always a list. Previously this was a bare string when servers
+            # agreed and a list when they did not, which forces the parser to
+            # type-check every time.
+            "rcodes": sorted(rcodes),
+            "ttl": min(ttls) if ttls else None,
+            "servers_queried": len(per_server),
+            "servers_answered": len(answered),
+            "per_server": per_server,
+        }
+
+        if rtype == "SOA" and agreed:
+            entry["soa"] = [_parse_soa(t) for t in agreed]
+
+        types_out[rtype] = entry
+
+    return types_out
+
+
+def main() -> int:
+    p = argparse.ArgumentParser("agent_dns_health")
+    p.add_argument("--domain", required=True)
+    p.add_argument("--types", default=",".join(DEFAULT_TYPES))
+    p.add_argument(
+        "--resolver",
+        default="",
+        help="Query this resolver recursively instead of the authoritative "
+        "servers. Answers then reflect that resolver's cache rather than "
+        "what the domain publishes.",
+    )
+    p.add_argument("--timeout", type=float, default=5.0)
+    p.add_argument("--retries", type=int, default=2)
+    p.add_argument("--deadline", type=float, default=45.0)
+    p.add_argument("--no-delegation", action="store_true")
+    args = p.parse_args()
+
+    domain = args.domain.strip().rstrip(".")
+    rtypes = [t.strip().upper() for t in args.types.split(",") if t.strip()]
+
+    # NS is always collected: the delegation check compares the zone's own NS
+    # set against the parent's, so it is needed even when the user did not
+    # select NS for drift monitoring.
+    collect_types = list(rtypes)
+    if not args.no_delegation and "NS" not in collect_types:
+        collect_types.append("NS")
+
+    deadline = Deadline(args.deadline)
+    now = int(time.time())
+
+    zone, parent_zone_or_err = find_parent_zone(domain)
+    delegation: dict[str, Any] = {
+        "schema": SCHEMA,
+        "domain": domain,
+        "queried_at": now,
+        "zone": zone,
+        "parent_zone": None,
+        "parent_ns": [],
+        "zone_ns": [],
+        "glue": [],
+        "error": None,
+    }
+
+    servers: dict[str, str] = {}
+    source = "authoritative"
+
+    if args.resolver:
+        servers = {args.resolver: args.resolver}
+        source = "resolver"
+        delegation["error"] = "skipped, explicit resolver configured"
+    elif zone is None:
+        delegation["error"] = parent_zone_or_err
+    else:
+        parent_zone = parent_zone_or_err
+        delegation["parent_zone"] = parent_zone
+        deleg = get_parent_delegation(domain, parent_zone, args.timeout, args.retries)
+        delegation["parent_ns"] = deleg["parent_ns"]
+        delegation["queried_server"] = deleg["queried_server"]
+        if deleg["error"]:
+            delegation["error"] = deleg["error"]
+
+        addrs = query_addresses(deleg["parent_ns"], deleg["glue"])
+        servers = {ns: ips[0] for ns, ips in addrs.items()}
+
+        for ns in deleg["parent_ns"]:
+            parent_glue = deleg["glue"].get(ns, [])
+            glue_v4 = sorted(a for a in parent_glue if ":" not in a)
+            resolved = independent_addresses(ns)
+
+            if not glue_v4:
+                # Out of bailiwick, so the parent publishes no glue and there
+                # is nothing to compare. Not a fault.
+                match: bool | None = None
+            elif not resolved:
+                match = None
+            else:
+                match = set(glue_v4) == set(resolved)
+
+            delegation["glue"].append(
+                {
+                    "name": ns,
+                    "parent_glue": parent_glue,
+                    "resolved": resolved,
+                    "match": match,
+                }
+            )
+
+    records: dict[str, Any] = {
+        "schema": SCHEMA,
+        "domain": domain,
+        "queried_at": now,
+        "source": source,
+        "servers": servers,
+        "types": {},
+        "error": None,
+        "deadline_reached": False,
+    }
+
+    if not servers:
+        records["error"] = "no nameservers could be determined"
+    else:
+        records["types"] = collect_records(
+            domain,
+            collect_types,
+            servers,
+            args.timeout,
+            args.retries,
+            recursive=bool(args.resolver),
+            deadline=deadline,
+        )
+        records["deadline_reached"] = deadline.expired()
+        ns_entry = records["types"].get("NS", {})
+        if ns_entry.get("agreed"):
+            delegation["zone_ns"] = ns_entry["agreed"]
+
+    # Emit only the record types the user actually selected. NS may have been
+    # collected purely for the delegation comparison.
+    records["types"] = {k: v for k, v in records["types"].items() if k in rtypes}
+
+    print("<<<dns_health_records:sep(0)>>>")
+    print(json.dumps(records, separators=(",", ":"), sort_keys=True))
+
+    # The section is withheld entirely rather than emitted with an error when
+    # the check cannot be performed. Emitting it would discover a service that
+    # sits at UNKNOWN forever, which is worse than having no service.
+    if not args.no_delegation and not args.resolver:
+        print("<<<dns_health_delegation:sep(0)>>>")
+        print(json.dumps(delegation, separators=(",", ":"), sort_keys=True))
+
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:
+        # An agent that dies produces no sections at all, which shows as a
+        # generic host problem rather than something diagnosable.
+        sys.stderr.write(f"agent_dns_health failed: {type(e).__name__}: {e}\n")
+        sys.exit(1)

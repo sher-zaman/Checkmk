@@ -1,0 +1,40 @@
+title: DNS health: zone delegation
+agents: dns_health
+catalog: app/dns_health
+license: GPL-2.0-only
+distribution:
+description:
+ This check compares the nameserver set published by the parent zone against the
+ set the domain publishes for itself, collected by the {dns_health} special
+ agent.
+
+ DNS holds two independent statements of which servers are authoritative for a
+ domain. The parent zone holds a delegation, which is changed through the
+ registrar, and the zone itself holds its own {NS} records, which are changed in
+ the DNS panel. Nothing enforces that the two agree. They drift when nameservers
+ are changed in one place but not the other, typically during a DNS provider
+ migration. The result is a lame delegation, where some resolvers are directed at
+ a server that no longer answers for the domain. This usually goes unnoticed,
+ because most queries still reach a working server.
+
+ The check also verifies glue, the addresses the parent hands out for each
+ nameserver, against an independent resolution of the same nameserver names.
+ Nameservers for which the parent publishes no glue, which is normal when the
+ nameservers sit outside the domain, are not treated as a fault. Only IPv4 glue
+ is verified.
+
+ The parent zone is located by walking upward from the domain until a zone answers
+ authoritatively, rather than by removing the first label, which is not reliable
+ for domains under a multi-label suffix.
+
+ A mismatch in either the nameserver set or the glue is {WARN} by default and
+ configurable. The service is {UNKNOWN} when the parent publishes no delegation
+ at all, or when a resolver override is configured in the collection rule, since
+ delegation cannot be established in that mode.
+
+ States are configurable via the rule "DNS zone delegation".
+
+discovery:
+ One service is created per host when zone delegation checking is enabled in the
+ rule "DNS Health", which is the default. No service is created when a resolver
+ override is configured.
