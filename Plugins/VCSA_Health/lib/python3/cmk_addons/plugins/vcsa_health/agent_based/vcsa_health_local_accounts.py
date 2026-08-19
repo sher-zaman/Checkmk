@@ -4,6 +4,7 @@
 # Check plugin: VCSA root account password expiry.
 #
 # Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
 # Email:    sher[at]sherz[dot]dev
 # Website:  https://sherz.dev
 # LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
@@ -75,17 +76,29 @@ def check_vcsa_health_local_accounts(params, section) -> CheckResult:
     if not section:
         return
 
-    # An appliance whose root password has already expired answers the account
-    # endpoint with HTTP 500, so the failure itself is the finding.
+    # The appliance answers this endpoint with HTTP 500 when the root password
+    # has actually expired, which is a genuine problem worth CRIT. A 401 or 403
+    # is a permissions problem with the monitoring account instead, and must not
+    # be escalated as though the appliance itself were at fault.
     if "error" in section:
-        detail = ""
-        if section["error"] == "500":
-            detail = ", this commonly indicates an expired root password"
-        yield Result(
-            state=State.CRIT,
-            summary="Unable to retrieve root account details%s" % detail,
-        )
-        yield Result(state=State.OK, notice="API response: HTTP %s" % section["error"])
+        status = section["error"]
+        if status == "500":
+            yield Result(
+                state=State.CRIT,
+                summary="Unable to retrieve root account details, this commonly "
+                "indicates an expired root password",
+            )
+        elif status in ("401", "403"):
+            yield Result(
+                state=State.UNKNOWN,
+                summary="Unable to retrieve root account details, the monitoring "
+                "account lacks permission (HTTP %s)" % status,
+            )
+        else:
+            yield Result(
+                state=State.UNKNOWN,
+                summary="Unable to retrieve root account details (HTTP %s)" % status,
+            )
         policy = section.get("policy")
         if policy:
             yield Result(

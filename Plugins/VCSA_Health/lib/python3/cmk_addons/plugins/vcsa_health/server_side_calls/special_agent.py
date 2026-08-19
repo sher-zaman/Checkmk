@@ -4,6 +4,7 @@
 # Server-side call configuration for the VCSA health special agent.
 #
 # Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
 # Email:    sher[at]sherz[dot]dev
 # Website:  https://sherz.dev
 # LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
@@ -29,6 +30,7 @@ def _commands_function(params, host_config: HostConfig):
     ]
     if params.get("no_cert_check"):
         args.append("--no-cert-check")
+    args += ["--update-source-type", params.get("update_source_type", "LAST_CHECK")]
 
     # The bare Secret is passed rather than Secret.unsafe(). Checkmk replaces it
     # with a password store reference at the process level, so the plaintext

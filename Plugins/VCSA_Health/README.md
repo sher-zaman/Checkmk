@@ -43,15 +43,7 @@ VCSA Syslog Forwarding        OK    1 target(s): 10.128.60.249:514 (UDP)
 
 ## Graphing
 
-- **CPU**: utilization and steal.
-- **Memory**: utilization, and used vs total bytes.
-- **Interfaces**: throughput and packet rate as bidirectional graphs, errors and drops together.
-- **Filesystems**: usage.
-- **Database usage**: by category and by retention tier.
-- **Time synchronization**: clock drift.
-- **Perfometers only**: certificate validity, root password validity, backup age and update-check age.
-
-Services with no metrics: vMon services, health areas, access settings, proxy, pending shutdown, VCHA.
+CPU (utilization + steal), memory (utilization, and used vs total bytes), interfaces (throughput and packet rate as bidirectional graphs, errors/drops together), filesystems, database usage by category and by retention tier, clock drift, and perfometers on certificate validity, root password validity, backup age and update-check age. Services with no metrics: vMon services, health areas, access settings, proxy, pending shutdown, VCHA.
 
 ## Data source
 
@@ -81,15 +73,16 @@ This extension supersedes the legacy `vcsa7_health_status` package by Thomas Sie
 
 ## Configuration
 
-Each check has a matching ruleset (Setup > Services > Service monitoring rules, under Virtualization): service and health-area state mapping, CPU/memory/steal/page-rate levels, filesystem levels with an archive opt-in, interface link and error/drop levels plus an expected address mode, drift and NTP-reachability states, update staleness, root password and certificate validity levels, backup age, database usage levels (none by default), access/proxy/syslog/shutdown state overrides, and HA/replication overrides. Uptime uses the built-in Uptime ruleset. No configuration is required; every check ships with working defaults.
+Each check has a matching ruleset (Setup > Services > Service monitoring rules, under Virtualization): service and health-area state mapping, CPU/memory/steal/page-rate levels, filesystem levels with an archive opt-in, interface link and error/drop levels plus an expected address mode, drift and NTP-reachability states, update severity states and staleness, root password and certificate validity levels, backup age, database usage levels (none by default), access/proxy/syslog/shutdown state overrides, and HA/replication overrides. Uptime uses the built-in Uptime ruleset. No configuration is required; every check ships with working defaults.
 
-## Validated
+## Tested against
 
 Validated in multiple production Checkmk environments, covering vCenter Server Appliance 7.0 and 8.0.
 
 ## Version history
 
-- **1.1.1**: halves the number of monitoring API requests; a failed DNS lookup now reports UNKNOWN instead of reporting the appliance as having no name servers; the database usage summary no longer repeats a category that breaches its levels, and its metrics now carry threshold lines
+- **1.1.2**: credential resolution now prefers the dedicated password store API on Checkmk 2.5 and later, falling back to the earlier module, so the credential is resolved inside the agent across the whole supported range; the update check now reports available updates from the appliance's pending update list rather than its cached status field, which could report the appliance as up to date while updates were available; available updates are reported with severity, type, release date and reboot requirement, with configurable states per severity, and the source consulted for the list is selectable in the datasource rule
+- **1.1.1**: halves the number of monitoring API requests by reusing the query parameter style the appliance accepts; a failed DNS lookup now reports UNKNOWN instead of reporting the appliance as having no name servers; the database usage summary no longer repeats a category that breaches its levels, and its metrics now carry threshold lines
 - **1.1.0**: adds access settings, proxy, syslog forwarding, pending shutdown, database usage, HA cluster and replication services; adds CPU steal, memory bytes, swap page rate, clock drift, interface address mode/gateway, and a certificate hostname check; filesystem percentages now taken from the appliance utilization metric with archive excluded by default; root password defaults changed to 14/7 days and reported even on account read failure; update staleness defaults changed to 14/30 days; credentials now resolved via the password store inside the agent
 - **1.0.0**: initial release, vMon service states, appliance health areas, resource and filesystem usage, update status, backup status, certificates, root password expiry, time synchronization, network interfaces and DNS, with rulesets, graphing and checkman pages
 

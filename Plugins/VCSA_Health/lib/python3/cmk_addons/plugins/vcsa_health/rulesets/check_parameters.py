@@ -4,6 +4,7 @@
 # Check parameter rulesets for the VCSA health plugin.
 #
 # Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
 # Email:    sher[at]sherz[dot]dev
 # Website:  https://sherz.dev
 # LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
@@ -200,11 +201,15 @@ def _parameter_form_update():
     return Dictionary(
         title=Title("VCSA update status"),
         help_text=Help(
-            "Thresholds for the age of the last update repository check of "
-            "the vCenter Server Appliance. An appliance that has stopped "
-            "checking the repository keeps reporting that it is up to date, "
-            "so a stale check hides pending updates rather than being a "
-            "harmless detail."
+            "Monitoring states for available updates, by the severity the "
+            "appliance reports for each, and thresholds for the age of the "
+            "last repository check. The state field the appliance exposes is "
+            "known to report up to date while updates are in fact available, "
+            "so the check uses the pending update list instead and only falls "
+            "back to the state field when that list cannot be retrieved. An "
+            "appliance that has stopped checking the repository keeps "
+            "reporting itself up to date, which is why the age of the last "
+            "check is also alerted."
         ),
         elements={
             "last_check_age": DictElement(
@@ -216,6 +221,41 @@ def _parameter_form_update():
                         displayed_magnitudes=[TimeMagnitude.DAY, TimeMagnitude.HOUR]
                     ),
                     prefill_fixed_levels=DefaultValue((1209600.0, 2592000.0)),
+                ),
+            ),
+            "severity_critical": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("An available update is of critical severity"),
+                    prefill=DefaultValue(ServiceState.CRIT),
+                ),
+            ),
+            "severity_important": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("An available update is of important severity"),
+                    prefill=DefaultValue(ServiceState.WARN),
+                ),
+            ),
+            "severity_moderate": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("An available update is of moderate severity"),
+                    prefill=DefaultValue(ServiceState.WARN),
+                ),
+            ),
+            "severity_low": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("An available update is of low severity"),
+                    prefill=DefaultValue(ServiceState.WARN),
+                ),
+            ),
+            "severity_unknown": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("An available update reports no severity"),
+                    prefill=DefaultValue(ServiceState.WARN),
                 ),
             ),
         },

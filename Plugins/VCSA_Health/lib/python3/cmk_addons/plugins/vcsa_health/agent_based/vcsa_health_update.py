@@ -4,6 +4,7 @@
 # Check plugin: VCSA update status.
 #
 # Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
 # Email:    sher[at]sherz[dot]dev
 # Website:  https://sherz.dev
 # LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
@@ -12,6 +13,9 @@
 # License: GPL-2.0-only
 #
 # Agent section format (sep 59):
+#   pending_count;<n>
+#   pending;<version>;<severity>;<priority>;<type>;<release epoch>;<reboot>;<text>
+#   pending_error;<http status>
 #   update;<state>;<pending version>;<latest query epoch>
 #   version;<version>;<build>;<product>
 
@@ -22,6 +26,7 @@ from cmk.agent_based.v2 import (
     CheckPlugin,
     CheckResult,
     DiscoveryResult,
+    Metric,
     Result,
     Service,
     State,
@@ -38,20 +43,52 @@ _UPDATE_STATES = {
     "ROLLBACK_IN_PROGRESS": State.CRIT,
 }
 
+# Severity as reported by the appliance, mapped to a parameter key.
+_SEVERITY_KEYS = {
+    "CRITICAL": "severity_critical",
+    "IMPORTANT": "severity_important",
+    "MODERATE": "severity_moderate",
+    "LOW": "severity_low",
+}
+
+
+def _float_or_none(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
 
 def parse_vcsa_health_update(string_table):
-    section = {}
+    section = {"pending": [], "pending_count": None, "pending_error": None}
     for line in string_table:
         if not line:
             continue
-        if line[0] == "update" and len(line) >= 2:
+        key = line[0]
+        if key == "pending_count" and len(line) >= 2:
+            try:
+                section["pending_count"] = int(line[1])
+            except ValueError:
+                pass
+        elif key == "pending_error" and len(line) >= 2:
+            section["pending_error"] = line[1]
+        elif key == "pending" and len(line) >= 2:
+            section["pending"].append(
+                {
+                    "version": line[1],
+                    "severity": (line[2] if len(line) > 2 else "").upper(),
+                    "priority": line[3] if len(line) > 3 else "",
+                    "type": line[4] if len(line) > 4 else "",
+                    "release": _float_or_none(line[5]) if len(line) > 5 else None,
+                    "reboot": line[6] == "1" if len(line) > 6 else False,
+                    "text": line[7] if len(line) > 7 else "",
+                }
+            )
+        elif key == "update" and len(line) >= 2:
             section["state"] = line[1]
             section["pending_version"] = line[2] if len(line) > 2 else ""
-            try:
-                section["query_time"] = float(line[3])
-            except (IndexError, ValueError):
-                pass
-        elif line[0] == "version" and len(line) >= 2:
+            section["query_time"] = _float_or_none(line[3]) if len(line) > 3 else None
+        elif key == "version" and len(line) >= 2:
             section["version"] = line[1]
             section["build"] = line[2] if len(line) > 2 else ""
             section["product"] = line[3] if len(line) > 3 else ""
@@ -73,14 +110,59 @@ def check_vcsa_health_update(params, section) -> CheckResult:
     if not section:
         return
 
-    update_state = section.get("state")
-    if update_state:
-        state = _UPDATE_STATES.get(update_state, State.UNKNOWN)
-        summary = "Update status: %s" % update_state
-        pending = section.get("pending_version")
-        if pending and update_state != "UP_TO_DATE":
-            summary += " (version %s)" % pending
-        yield Result(state=state, summary=summary)
+    pending = section["pending"]
+
+    # The pending list is authoritative. The state field is known to report
+    # UP_TO_DATE on appliances that do have updates available, so it is only
+    # trusted when no pending list could be retrieved.
+    if pending:
+        worst = State.OK
+        for entry in pending:
+            key = _SEVERITY_KEYS.get(entry["severity"], "severity_unknown")
+            worst = State.worst(worst, State(params[key]))
+
+        severities = sorted({e["severity"] for e in pending if e["severity"]})
+        summary = "%d update(s) available" % len(pending)
+        if severities:
+            summary += " (%s)" % ", ".join(s.title() for s in severities)
+        yield Result(state=worst, summary=summary)
+
+        if any(e["reboot"] for e in pending):
+            yield Result(state=State.OK, summary="reboot required")
+
+        for entry in pending:
+            detail = "Version %s" % entry["version"]
+            for label, value in (
+                ("severity", entry["severity"]),
+                ("priority", entry["priority"]),
+                ("type", entry["type"]),
+            ):
+                if value:
+                    detail += ", %s: %s" % (label, value)
+            if entry["release"]:
+                detail += ", released %s" % render.date(entry["release"])
+            if entry["reboot"]:
+                detail += ", reboot required"
+            if entry["text"]:
+                detail += " (%s)" % entry["text"]
+            yield Result(state=State.OK, notice=detail)
+    else:
+        update_state = section.get("state")
+        if section["pending_error"] is not None:
+            yield Result(
+                state=State.UNKNOWN,
+                summary="Unable to retrieve the pending update list (HTTP %s)"
+                % section["pending_error"],
+            )
+        elif update_state:
+            state = _UPDATE_STATES.get(update_state, State.UNKNOWN)
+            summary = "Update status: %s" % update_state
+            target = section.get("pending_version")
+            if target and update_state != "UP_TO_DATE":
+                summary += " (version %s)" % target
+            yield Result(state=state, summary=summary)
+
+    yield Metric("vcsa_updates_pending", len(pending))
 
     version = section.get("version")
     if version:
@@ -89,9 +171,9 @@ def check_vcsa_health_update(params, section) -> CheckResult:
             details += " build %s" % section["build"]
         yield Result(state=State.OK, summary="Version: %s" % details)
 
-    # Age of the last repository check. An appliance that has stopped checking
-    # keeps reporting UP_TO_DATE indefinitely, so a stale check is a blind spot
-    # rather than a harmless detail.
+    # An appliance that has stopped querying the repository keeps reporting
+    # itself up to date, so the age of the last check is a blind spot in its own
+    # right.
     query_time = section.get("query_time")
     if query_time:
         yield from check_levels(
@@ -112,5 +194,10 @@ check_plugin_vcsa_health_update = CheckPlugin(
     check_ruleset_name="vcsa_health_update",
     check_default_parameters={
         "last_check_age": ("fixed", (1209600.0, 2592000.0)),  # 14 d / 30 d
+        "severity_critical": 2,
+        "severity_important": 1,
+        "severity_moderate": 1,
+        "severity_low": 1,
+        "severity_unknown": 1,
     },
 )

@@ -5,6 +5,7 @@
 # Appliance (VCSA) health monitoring via the appliance REST API.
 #
 # Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
 # Email:    sher[at]sherz[dot]dev
 # Website:  https://sherz.dev
 # LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
@@ -41,12 +42,25 @@ import urllib3
 # reference needs Checkmk's password store, which is present when the agent is
 # invoked by the Checkmk core but not when it is run by hand. Manual runs use
 # --password or stdin instead.
-try:
-    from cmk.utils import password_store as _pwstore
+#
+# Two resolve paths are supported. Checkmk 2.5 and later expose a dedicated
+# password store API; earlier versions expose the same on-disk store through an
+# internal module. The newer API is preferred where present, and the older one
+# is the fallback, so the agent keeps working across the whole supported range
+# and does not depend on either module alone.
+_PWSTORE_API = None
 
-    _HAVE_PWSTORE = True
+try:  # Checkmk 2.5+ dedicated API
+    from cmk.password_store import v1_unstable as _pwstore_v1
+
+    _PWSTORE_API = "v1"
 except ImportError:  # pragma: no cover - depends on execution environment
-    _HAVE_PWSTORE = False
+    try:  # Checkmk 2.3 and 2.4, and 2.5 as a fallback
+        from cmk.utils import password_store as _pwstore_legacy
+
+        _PWSTORE_API = "legacy"
+    except ImportError:  # pragma: no cover
+        _PWSTORE_API = None
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -110,11 +124,58 @@ def parse_args(argv):
     )
     parser.add_argument("--timeout", type=int, default=30, help="Request timeout in seconds")
     parser.add_argument(
+        "--update-source-type",
+        default="LAST_CHECK",
+        choices=["LAST_CHECK", "LOCAL", "LOCAL_AND_ONLINE", "DEFAULT"],
+        help="Source consulted for the pending update list. LAST_CHECK reads the "
+        "appliance's cached result and performs no network access. "
+        "LOCAL_AND_ONLINE makes the appliance query its online repository on "
+        "every run, which is more current but generates outbound traffic.",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Dump raw API responses to stderr and raise exceptions",
     )
     return parser.parse_args(argv)
+
+
+def _resolve_from_store(reference):
+    """Resolve a "<id>:<store file>" reference into the real password.
+
+    Tries the Checkmk 2.5+ API first and the older internal module second. The
+    resolved value is returned to the caller and held only in this process's
+    memory; it is never logged, printed, or written to disk.
+    """
+    if ":" not in reference:
+        sys.stderr.write("Malformed --secret-id, expected <id>:<store file>\n")
+        sys.exit(1)
+    secret_id, store_file = reference.split(":", 1)
+
+    if _PWSTORE_API == "v1":
+        # The 2.5+ API exposes the lookup under one of a small number of names
+        # depending on build, so the available one is used rather than assuming.
+        for attr in ("lookup", "resolve", "reveal"):
+            func = getattr(_pwstore_v1, attr, None)
+            if callable(func):
+                result = func(Path(store_file), secret_id)
+                # Some variants return a wrapper exposing .reveal()
+                revealer = getattr(result, "reveal", None)
+                return revealer() if callable(revealer) else result
+        sys.stderr.write(
+            "Checkmk's password store API is present but exposes no known "
+            "lookup function. Use --password for manual runs.\n"
+        )
+        sys.exit(1)
+
+    if _PWSTORE_API == "legacy":
+        return _pwstore_legacy.lookup(Path(store_file), secret_id)
+
+    sys.stderr.write(
+        "Cannot resolve --secret-id: Checkmk's password store is not "
+        "importable. Use --password for manual runs.\n"
+    )
+    sys.exit(1)
 
 
 def resolve_password(args):
@@ -128,19 +189,12 @@ def resolve_password(args):
         return args.password
 
     if args.secret_id:
-        if not _HAVE_PWSTORE:
-            sys.stderr.write(
-                "Cannot resolve --secret-id: Checkmk's password store is not "
-                "importable. Use --password for manual runs.\n"
-            )
-            sys.exit(1)
-        if ":" not in args.secret_id:
-            sys.stderr.write("Malformed --secret-id, expected <id>:<store file>\n")
-            sys.exit(1)
-        secret_id, store_file = args.secret_id.split(":", 1)
         try:
-            return _pwstore.lookup(Path(store_file), secret_id)
+            return _resolve_from_store(args.secret_id)
+        except SystemExit:
+            raise
         except Exception as exc:  # pylint: disable=broad-except
+            # Only the failure reason is reported, never the credential.
             sys.stderr.write("Failed to resolve password from store: %s\n" % exc)
             sys.exit(1)
 
@@ -568,12 +622,56 @@ def sections_monitoring(api):
     return catalog
 
 
-def section_update(api):
+def section_update(api, source_type="LAST_CHECK"):
     update = api.get("/api/appliance/update")
     version = api.get("/api/appliance/system/version")
-    if not isinstance(update, dict) and not isinstance(version, dict):
+
+    # The state field on /api/appliance/update reports the appliance's cached
+    # conclusion and is known to report UP_TO_DATE while updates are in fact
+    # available. The pending list is the authoritative source, so it is queried
+    # separately and takes precedence in the check.
+    pending = api.get(
+        "/api/appliance/update/pending", params={"source_type": source_type}
+    )
+    pending_status = api.last_status
+
+    if (
+        not isinstance(update, dict)
+        and not isinstance(version, dict)
+        and not isinstance(pending, list)
+    ):
         return
     print("<<<vcsa_health_update:sep(59)>>>")
+
+    # An appliance with nothing pending answers this endpoint with HTTP 500 and
+    # a missing-directory message rather than an empty list, so that specific
+    # failure is reported as "none pending" rather than as a collection error.
+    if isinstance(pending, list):
+        print("pending_count;%d" % len(pending))
+        for entry in pending:
+            if not isinstance(entry, dict):
+                continue
+            description = entry.get("description")
+            text = ""
+            if isinstance(description, dict):
+                text = description.get("default_message", "")
+            print(
+                "pending;%s;%s;%s;%s;%s;%s;%s"
+                % (
+                    sanitize(entry.get("version", "")),
+                    sanitize(entry.get("severity", "")),
+                    sanitize(entry.get("priority", "")),
+                    sanitize(entry.get("update_type", "")),
+                    to_epoch(entry.get("release_date")) or "",
+                    "1" if entry.get("reboot_required") else "0",
+                    sanitize(text),
+                )
+            )
+    elif pending_status in (500, 404):
+        print("pending_count;0")
+    else:
+        print("pending_error;%s" % (pending_status if pending_status else "no response"))
+
     if isinstance(update, dict):
         print(
             "update;%s;%s;%s"
@@ -1144,7 +1242,7 @@ def main(argv=None):
         section_appliance_health(api)
         catalog = sections_monitoring(api)
         section_database(api, catalog=catalog)
-        section_update(api)
+        section_update(api, source_type=args.update_source_type)
         section_backup(api)
         # Networking is fetched first so the hostname is available for the
         # certificate cross-check.

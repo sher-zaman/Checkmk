@@ -4,6 +4,7 @@
 # Datasource rule for the VCSA health special agent.
 #
 # Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
 # Email:    sher[at]sherz[dot]dev
 # Website:  https://sherz.dev
 # LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
@@ -14,6 +15,8 @@
 from cmk.rulesets.v1 import Help, Title
 from cmk.rulesets.v1.form_specs import (
     BooleanChoice,
+    SingleChoice,
+    SingleChoiceElement,
     DefaultValue,
     DictElement,
     Dictionary,
@@ -78,6 +81,35 @@ def _parameter_form():
                     unit_symbol="s",
                     prefill=DefaultValue(30),
                     custom_validate=(validators.NumberInRange(min_value=1),),
+                ),
+            ),
+            "update_source_type": DictElement(
+                required=False,
+                parameter_form=SingleChoice(
+                    title=Title("Source for the available update list"),
+                    help_text=Help(
+                        "Which source the appliance consults when listing "
+                        "available updates. The cached last result performs no "
+                        "network access and is suitable for frequent polling. "
+                        "Querying the online repository is more current but "
+                        "makes the appliance reach out to its update "
+                        "repository on every check."
+                    ),
+                    elements=[
+                        SingleChoiceElement(
+                            name="LAST_CHECK",
+                            title=Title("Cached result of the appliance's last check"),
+                        ),
+                        SingleChoiceElement(
+                            name="LOCAL",
+                            title=Title("Local repository only"),
+                        ),
+                        SingleChoiceElement(
+                            name="LOCAL_AND_ONLINE",
+                            title=Title("Local and online repository (live query)"),
+                        ),
+                    ],
+                    prefill=DefaultValue("LAST_CHECK"),
                 ),
             ),
         },

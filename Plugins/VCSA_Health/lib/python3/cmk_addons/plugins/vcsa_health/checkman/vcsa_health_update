@@ -4,21 +4,37 @@ catalog: app/vmware
 license: GPL-2.0-only
 distribution: check_mk
 description:
- This check monitors the update status of a VMware vCenter Server
- Appliance (VCSA), reports the installed product version, and checks how
- long ago the appliance last queried the update repository. The data is
- retrieved by the special agent {agent_vcsa_health}.
+ This check monitors available updates for a VMware vCenter Server Appliance
+ (VCSA), reports the installed product version, and checks how long ago the
+ appliance last queried the update repository. The data is retrieved by the
+ special agent {agent_vcsa_health}.
 
- The state is {OK} if the appliance is up to date, {WARN} if updates are
- pending or an update is being staged or installed, and {CRIT} if an
- installation failed or a rollback is in progress.
+ The state field the appliance exposes on its update endpoint reports a cached
+ conclusion and is known to report that the appliance is up to date while
+ updates are in fact available. This check therefore uses the pending update
+ list as its authoritative source, and falls back to the state field only when
+ that list cannot be retrieved.
 
- An appliance that has stopped querying the update repository keeps
- reporting that it is up to date indefinitely, which hides pending
- updates. Upper levels on the age of the last check can therefore be
- configured via the ruleset "VCSA update status", with defaults of 14 days
- {WARN} and 30 days {CRIT}. Appliances that do not report a last query
+ Each available update is reported with its version, severity, priority, type,
+ release date and whether it requires a reboot. The monitoring state is taken
+ from the highest severity present, defaulting to {CRIT} for critical and
+ {WARN} for important, moderate, low and unrecognised severities. All of these
+ are configurable via the ruleset "VCSA update status".
+
+ An appliance that has stopped querying the repository keeps reporting itself
+ up to date, so the age of the last check is alerted separately, defaulting to
+ 14 days {WARN} and 30 days {CRIT}. Appliances that do not report a last query
  time are not checked for staleness.
+
+ Which source the appliance consults when listing available updates is set in
+ the datasource rule. The default reads the cached result of the appliance's
+ own last check and performs no network access. Querying the online repository
+ is more current but makes the appliance reach out to its update repository on
+ every check interval.
+
+ An appliance with nothing pending answers the pending endpoint with an error
+ rather than an empty list; this is recognised and reported as no updates
+ available rather than as a collection failure.
 
 discovery:
  One service is created per appliance.

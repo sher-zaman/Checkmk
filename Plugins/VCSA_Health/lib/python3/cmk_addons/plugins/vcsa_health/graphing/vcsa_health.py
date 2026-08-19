@@ -4,6 +4,7 @@
 # Metric, graph and perfometer definitions for the VCSA health plugin.
 #
 # Author:   Sher Zaman
+# Company:  FirmaTRUST | Managed IT and Cybersecurity
 # Email:    sher[at]sherz[dot]dev
 # Website:  https://sherz.dev
 # LinkedIn: https://www.linkedin.com/in/sher-zaman-95b008114/
@@ -164,6 +165,13 @@ perfometer_vcsa_cert_remaining = Perfometer(
     name="vcsa_cert_remaining",
     focus_range=FocusRange(Closed(0), Open(7776000)),
     segments=["vcsa_cert_remaining"],
+)
+
+metric_vcsa_updates_pending = Metric(
+    name="vcsa_updates_pending",
+    title=Title("VCSA available updates"),
+    unit=UNIT_COUNT,
+    color=Color.LIGHT_PURPLE,
 )
 
 metric_vcsa_update_check_age = Metric(
