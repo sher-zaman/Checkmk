@@ -36,5 +36,12 @@ description:
  rather than an empty list; this is recognised and reported as no updates
  available rather than as a collection failure.
 
+ Reading the pending list can require a privilege the monitoring account does
+ not hold. Where it cannot be read, the check falls back to the appliance's own
+ update state field and notes the limitation in its details, rather than
+ discarding the check. Because that field can report the appliance as up to
+ date while updates are available, the state to report in this situation is
+ configurable via the same ruleset.
+
 discovery:
  One service is created per appliance.

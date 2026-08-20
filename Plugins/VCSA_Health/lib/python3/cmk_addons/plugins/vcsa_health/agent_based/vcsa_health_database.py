@@ -108,14 +108,28 @@ def check_vcsa_health_database(params, section) -> CheckResult:
     if summary_parts:
         yield Result(state=overall, summary=", ".join(summary_parts))
 
+    tier_parts = []
     for key, (label, metric) in _TIERS.items():
         value = section["size"].get(key)
         if value is None:
             continue
+        tier_parts.append("%s %s" % (label, render.bytes(value)))
         yield Result(
             state=State.OK, notice="%s stats: %s" % (label, render.bytes(value))
         )
         yield Metric(metric, value)
+
+    # An appliance may advertise the retention tier sizes without the per
+    # category usage metrics. Without this the service would carry only
+    # notices and show an empty summary.
+    if not summary_parts:
+        if tier_parts:
+            yield Result(
+                state=State.OK,
+                summary="Statistics by retention tier: %s" % ", ".join(tier_parts),
+            )
+        else:
+            yield Result(state=State.UNKNOWN, summary="No database usage reported")
 
 
 check_plugin_vcsa_health_database = CheckPlugin(

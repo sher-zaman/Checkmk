@@ -258,6 +258,23 @@ def _parameter_form_update():
                     prefill=DefaultValue(ServiceState.WARN),
                 ),
             ),
+            "pending_unavailable": DictElement(
+                required=False,
+                parameter_form=ServiceState(
+                    title=Title("The list of available updates cannot be retrieved"),
+                    help_text=Help(
+                        "Reading the pending update list can require a "
+                        "privilege the monitoring account does not hold. When "
+                        "it cannot be read the check falls back to the "
+                        "appliance's own update state field, which can report "
+                        "the appliance as up to date while updates are "
+                        "available. This is reported as a detail by default "
+                        "rather than raising an alarm; raise it here to be "
+                        "alerted that update detection is degraded."
+                    ),
+                    prefill=DefaultValue(ServiceState.OK),
+                ),
+            ),
         },
     )
 
