@@ -11,12 +11,13 @@ Each extension is packaged as an MKP and ships with its unpacked source, so the 
 | [Synology_SMART](Plugins/Synology_SMART) | Per-disk SMART attributes on Synology NAS units | SNMP | 1.1.0 |
 | [FortiSwitch_Device_Health](Plugins/FortiSwitch_Device_Health) | CPU, memory, temperature, PSU, fan and SFP optics on Fortinet FortiSwitch | SNMP | 1.2.0 |
 | [Dell_PowerVault_ME5](Plugins/Dell_PowerVault_ME5) | Dell PowerVault ME5 arrays: controllers, pools, volumes, disks, sensors, host port I/O | Special agent | 1.2.2 |
-| [VCSA_Health](Plugins/VCSA_Health) | VMware vCenter Server Appliance services, health areas, filesystems, backup and certificate | Special agent | 1.1.1 |
+| [VCSA_Health](Plugins/VCSA_Health) | VMware vCenter Server Appliance services, health areas, filesystems, backup and certificate | Special agent | 1.1.3 |
 | [DHCP_Failover](Plugins/DHCP_Failover) | Windows DHCP failover relationship state | Agent, bakery | 1.0.1 |
 | [System_Reboot_Required](Plugins/System_Reboot_Required) | Pending reboot detection across major Linux distributions | Agent, bakery | 1.1.0 |
 | [DFS_State](Plugins/DFS_State) | DFS Replication state per replicated folder | Agent, bakery | 2.1.1 |
 | [DFS_Backlog](Plugins/DFS_Backlog) | DFS Replication backlog per folder, partner and direction | Agent, bakery | 1.5.1 |
 | [Infoblox_CSP](Plugins/Infoblox_CSP) | Infoblox Cloud Services Portal: DNS, DHCP, IPAM, security policy and service health | Special agent | 1.6.0 |
+| [DNS_Health](Plugins/DNS_Health) | Authoritative DNS record health and delegation, per domain | Special agent | 4.0.0 |
 
 Every extension folder contains its own README covering what it monitors, requirements, installation and configuration.
 
